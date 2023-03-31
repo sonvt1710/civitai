@@ -773,7 +773,7 @@ model Image {
   hash              String?
   height            Int?
   width             Int?
-  nsfw              Boolean                 @default(false)
+  nsfwLevel         Int                     @default(0)
   tosViolation      Boolean                 @default(false)
   analysis          Json?
   generationProcess ImageGenerationProcess?

@@ -107,7 +107,7 @@ export default WebhookEndpoint(async function imageTags(req, res) {
         .filter((x) => x.id)
         .map((x) => `(${imageId}, ${x.id}, ${x.confidence}, true, ${isModerationCategory(x.tag)})`)
         .join(', ')}
-      ON CONFLICT ("imageId", "tagId") DO UPDATE SET "confidence" = EXCLUDED."confidence";
+      ON CONFLICT ("imageId", "tagId") DO UPDATE SET "confidence" = EXCLUDED."confidence", "createdAt" = NOW();
     `);
   } catch (e: any) {
     const image = await dbWrite.image.findUnique({
@@ -144,7 +144,11 @@ export default WebhookEndpoint(async function imageTags(req, res) {
     const shouldReview = hasMinorTag && !hasAdultTag && (!hasAnimatedTag || nsfw);
     const image = await dbWrite.image.update({
       where: { id: imageId },
-      data: { scannedAt: new Date(), nsfw, needsReview: shouldReview ? true : undefined },
+      data: {
+        scannedAt: new Date(),
+        nsfwLevel: nsfw ? 3 : 0,
+        needsReview: shouldReview ? true : undefined,
+      },
       select: { id: true, meta: true },
     });
 
@@ -158,6 +162,13 @@ export default WebhookEndpoint(async function imageTags(req, res) {
           .status(200)
           .json({ ok: false, error: 'Contains blocked keywords', deleted: true, blockedFor, tags });
       }
+    }
+
+    // Run nsfw level baseline update
+    if (nsfw) {
+      await dbWrite.$executeRaw`
+        SELECT update_nsfw_level((now() - INTERVAL '1 minute')::timestamp);
+      `;
     }
   } catch (e: any) {
     return res.status(500).json({ ok: false, error: e.message });

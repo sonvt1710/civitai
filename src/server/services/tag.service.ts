@@ -321,7 +321,8 @@ export const moderateTags = async ({ entityIds, entityType, disable }: ModerateT
   } else if (entityType === 'image') {
     await dbWrite.$executeRawUnsafe(`
       UPDATE "TagsOnImage"
-      SET "disabled" = ${disable}, "needsReview" = false, "automated" = false
+      -- Include setting createdAt so that we can use it to trigger nsfw assessment
+      SET "disabled" = ${disable}, "needsReview" = false, "automated" = false, "createdAt" = NOW()
       WHERE "needsReview" = true AND "imageId" IN (${entityIds.join(', ')})
     `);
 
@@ -329,15 +330,7 @@ export const moderateTags = async ({ entityIds, entityType, disable }: ModerateT
     if (disable) {
       await dbWrite.$executeRawUnsafe(`
         -- Update NSFW baseline
-        UPDATE "Image" SET nsfw = false
-        WHERE id IN (${entityIds.join(', ')})
-          AND NOT EXISTS (
-            SELECT 1
-            FROM "TagsOnImage" toi
-            JOIN "Tag" t ON t.id = toi."tagId" AND t.type = 'Moderation'
-            WHERE toi."imageId" = "Image".id
-              AND toi."disabled" = false
-          )
+        SELECT update_nsfw_level((now() - INTERVAL '1 minute')::timestamp);
       `);
     }
   }

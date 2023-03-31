@@ -62,7 +62,8 @@ export const disabledVotedTags = createJob('disable-voted-tags', '*/2 * * * *', 
       GROUP BY a."imageId", a."tagId"
       HAVING SUM(votes.vote) <= 0
     )
-    UPDATE "TagsOnImage" SET "disabled" = true, "needsReview" = false
+    -- Include setting createdAt so that we can use it to trigger nsfw assessment
+    UPDATE "TagsOnImage" SET "disabled" = true, "needsReview" = false, createdAt = NOW()
     WHERE ("tagId", "imageId") IN (
       SELECT
         "tagId",
@@ -105,13 +106,7 @@ export const disabledVotedTags = createJob('disable-voted-tags', '*/2 * * * *', 
   // --------------------------------------------
   await dbWrite.$executeRawUnsafe(`
     -- Remove NSFW if no longer tagged
-    UPDATE "Image" i SET nsfw = false
-    WHERE i.nsfw = true AND NOT EXISTS (
-      SELECT 1 FROM "TagsOnImage" toi
-      JOIN "Tag" t ON t.id = toi."tagId"
-      WHERE
-        toi.disabled = FALSE AND t.type = 'Moderation' AND toi."imageId" = i.id
-    );
+    SELECT update_nsfw_level('${lastApplied}');
   `);
 
   // Update the last sent time
