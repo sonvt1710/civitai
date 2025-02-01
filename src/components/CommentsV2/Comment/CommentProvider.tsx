@@ -1,7 +1,7 @@
 import { CommentV2BadgeProps, useCommentsContext } from '~/components/CommentsV2/CommentsProvider';
 import { useCurrentUser } from '~/hooks/useCurrentUser';
-import { InfiniteCommentV2Model } from '~/server/controllers/commentv2.controller';
 import { createContext, useContext } from 'react';
+import type { Comment } from '~/server/services/commentsv2.service';
 
 type CommentV2State = {
   canReport?: boolean;
@@ -10,7 +10,7 @@ type CommentV2State = {
   canReply?: boolean;
   canHide?: boolean;
   badge?: CommentV2BadgeProps;
-  comment: InfiniteCommentV2Model;
+  comment: Comment;
 };
 
 const CommentV2Context = createContext<CommentV2State | null>(null);
@@ -25,11 +25,11 @@ export function CommentProvider({
   children,
   resourceOwnerId: resourcerOwnerId,
 }: {
-  comment: InfiniteCommentV2Model;
+  comment: Comment;
   children: React.ReactNode;
   resourceOwnerId?: number;
 }) {
-  const { isLocked, isMuted, badges } = useCommentsContext();
+  const { isLocked, isMuted, badges, forceLocked } = useCommentsContext();
   const currentUser = useCurrentUser();
   const isOwner = currentUser?.id === comment.user.id;
   const isMod = currentUser?.isModerator ?? false;
@@ -37,7 +37,7 @@ export function CommentProvider({
   const canDelete = isOwner || currentUser?.isModerator;
   const canEdit = (!isLocked && !isMuted) || isMod;
   const canReply =
-    (currentUser && !isOwner && !isLocked && !isMuted && !comment.hidden) ?? undefined;
+    (currentUser && !isLocked && !isMuted && !forceLocked && !comment.hidden) ?? undefined;
   const canHide = currentUser?.id === resourcerOwnerId || isMod;
   const badge = badges?.find((x) => x.userId === comment.user.id);
   return (

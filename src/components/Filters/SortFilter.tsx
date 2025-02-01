@@ -1,18 +1,34 @@
+import { ButtonProps } from '@mantine/core';
 import { useRouter } from 'next/router';
-import { IsClient } from '~/components/IsClient/IsClient';
 import { SelectMenu, SelectMenuV2 } from '~/components/SelectMenu/SelectMenu';
+import { useBrowsingSettings } from '~/providers/BrowserSettingsProvider';
+import { useFeatureFlags } from '~/providers/FeatureFlagsProvider';
 import { FilterSubTypes, useFiltersContext, useSetFilters } from '~/providers/FiltersProvider';
 import {
   ArticleSort,
   BountySort,
+  BuzzWithdrawalRequestSort,
+  ClubSort,
   CollectionSort,
   ImageSort,
   ImageSortHidden,
+  MarkerSort,
   ModelSort,
   PostSort,
   QuestionSort,
+  ThreadSort,
+  ToolSort,
 } from '~/server/common/enums';
 import { removeEmpty } from '~/utils/object-helpers';
+
+type SortFilterButtonProps = {
+  variant: 'button';
+  buttonProps?: ButtonProps;
+};
+type SortFilterMenuProps = {
+  variant?: 'menu';
+};
+type SortFilterComponentProps = SortFilterButtonProps | SortFilterMenuProps;
 
 type SortFilterProps = StatefulProps | DumbProps;
 
@@ -25,6 +41,12 @@ const sortOptions = {
   articles: Object.values(ArticleSort),
   collections: Object.values(CollectionSort),
   bounties: Object.values(BountySort),
+  clubs: Object.values(ClubSort),
+  videos: Object.values(ImageSort).filter((x) => !Object.values(ImageSortHidden).includes(x)),
+  threads: Object.values(ThreadSort),
+  markers: Object.values(MarkerSort),
+  tools: Object.values(ToolSort),
+  buzzWithdrawalRequests: Object.values(BuzzWithdrawalRequestSort),
 };
 
 export function SortFilter(props: SortFilterProps) {
@@ -33,8 +55,8 @@ export function SortFilter(props: SortFilterProps) {
 }
 
 type DumbProps = {
+  // Dumb props should work without needing to create a full filter attribute.
   type: FilterSubTypes;
-  variant?: 'menu' | 'button';
   value:
     | ModelSort
     | PostSort
@@ -42,7 +64,12 @@ type DumbProps = {
     | QuestionSort
     | ArticleSort
     | CollectionSort
-    | BountySort;
+    | BountySort
+    | ClubSort
+    | MarkerSort
+    | ThreadSort
+    | ToolSort
+    | BuzzWithdrawalRequestSort;
   onChange: (
     value:
       | ModelSort
@@ -52,21 +79,41 @@ type DumbProps = {
       | ArticleSort
       | CollectionSort
       | BountySort
+      | ClubSort
+      | MarkerSort
+      | ThreadSort
+      | ToolSort
+      | BuzzWithdrawalRequestSort
   ) => void;
-};
-function DumbSortFilter({ type, value, onChange, variant = 'menu' }: DumbProps) {
+} & SortFilterComponentProps;
+
+function DumbSortFilter({ type, value, onChange, ...props }: DumbProps) {
+  const showNsfw = useBrowsingSettings((x) => x.showNsfw);
+  const { canViewNsfw } = useFeatureFlags();
   const sharedProps = {
     label: value,
-    options: sortOptions[type].map((x) => ({ label: x, value: x })),
+    options: sortOptions[type]
+      .map((x) => ({ label: x, value: x }))
+      .filter((x) => {
+        if (!canViewNsfw && (x.value === 'Newest' || x.value === 'Oldest')) return false;
+        if (type === 'images') {
+          if (!showNsfw && x.value === 'Newest') return false;
+          return true;
+        }
+        return true;
+      }),
     onClick: onChange,
     value,
   };
+  props.variant ??= 'menu';
 
   return (
-    <IsClient>
-      {variant === 'menu' && <SelectMenu {...sharedProps} />}
-      {variant === 'button' && <SelectMenuV2 {...sharedProps} />}
-    </IsClient>
+    <>
+      {props.variant === 'menu' && <SelectMenu {...sharedProps} />}
+      {props.variant === 'button' && (
+        <SelectMenuV2 {...sharedProps} buttonProps={props.buttonProps} />
+      )}
+    </>
   );
 }
 
@@ -74,9 +121,9 @@ type StatefulProps = {
   type: FilterSubTypes;
   value?: undefined;
   onChange?: undefined;
-  variant?: 'menu' | 'button';
-};
-function StatefulSortFilter({ type, variant }: StatefulProps) {
+} & SortFilterComponentProps;
+
+function StatefulSortFilter({ type, variant, ...props }: StatefulProps) {
   const { query, pathname, replace } = useRouter();
   const globalSort = useFiltersContext((state) => state[type].sort);
   const querySort = query.sort as typeof globalSort | undefined;
@@ -91,5 +138,7 @@ function StatefulSortFilter({ type, variant }: StatefulProps) {
   };
 
   const sort = querySort ? querySort : globalSort;
-  return <DumbSortFilter type={type} value={sort} onChange={setSort} variant={variant} />;
+  return (
+    <DumbSortFilter type={type} value={sort} onChange={setSort} variant={variant} {...props} />
+  );
 }

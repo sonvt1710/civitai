@@ -1,5 +1,4 @@
 import { Chip, createStyles } from '@mantine/core';
-import { MetricTimeframe } from '@prisma/client';
 import { useRouter } from 'next/router';
 import { useCallback } from 'react';
 import { PeriodModeToggle } from '~/components/Filters/PeriodModeToggle';
@@ -12,6 +11,7 @@ import {
   useFiltersContext,
   useSetFilters,
 } from '~/providers/FiltersProvider';
+import { MetricTimeframe } from '~/shared/utils/prisma/enums';
 import { removeEmpty } from '~/utils/object-helpers';
 import { getDisplayName } from '~/utils/string-helpers';
 
@@ -86,7 +86,7 @@ function DumbPeriodFilter({
               variant="filled"
               tt="capitalize"
             >
-              {x.label}
+              <span>{x.label}</span>
             </Chip>
           ))}
         </Chip.Group>
@@ -107,7 +107,18 @@ function StatefulPeriodFilter({ type, disabled, hideMode, variant }: StatefulPro
   const { query, pathname, replace } = useRouter();
 
   const globalPeriod = useFiltersContext(
-    useCallback((state) => (type !== 'collections' ? state[type].period : undefined), [type])
+    useCallback(
+      (state) =>
+        type !== 'collections' &&
+        type !== 'clubs' &&
+        type !== 'threads' &&
+        type !== 'markers' &&
+        type !== 'tools' &&
+        type !== 'buzzWithdrawalRequests'
+          ? state[type].period
+          : undefined,
+      [type]
+    )
   );
   const queryPeriod = query.period as typeof globalPeriod | undefined;
 
