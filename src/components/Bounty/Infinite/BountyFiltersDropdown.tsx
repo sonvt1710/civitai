@@ -9,16 +9,21 @@ import {
   Button,
   createStyles,
   Drawer,
+  ButtonProps,
+  useMantineTheme,
 } from '@mantine/core';
-import { IconChevronDown, IconFilter } from '@tabler/icons-react';
-import { BountyType, MetricTimeframe } from '@prisma/client';
+import { IconFilter } from '@tabler/icons-react';
+import { BountyType, MetricTimeframe } from '~/shared/utils/prisma/enums';
 import { getDisplayName } from '~/utils/string-helpers';
 import { useFiltersContext } from '~/providers/FiltersProvider';
 import { useCallback, useState } from 'react';
 import { BountyStatus } from '~/server/common/enums';
-import { constants, BaseModel } from '~/server/common/constants';
+import { activeBaseModels, BaseModel } from '~/server/common/constants';
 import { useIsMobile } from '~/hooks/useIsMobile';
 import { PeriodFilter } from '~/components/Filters';
+import { containerQuery } from '~/utils/mantine-css-helpers';
+import { FilterButton } from '~/components/Buttons/FilterButton';
+import { FilterChip } from '~/components/Filters/FilterChip';
 
 const supportsBaseModel = [
   BountyType.ModelCreation,
@@ -32,8 +37,8 @@ const checkSupportsBaseModel = (types: BountyType[]) => {
   );
 };
 
-export function BountyFiltersDropdown() {
-  const { classes, theme, cx } = useStyles();
+export function BountyFiltersDropdown({ ...buttonProps }: Props) {
+  const theme = useMantineTheme();
   const mobile = useIsMobile();
 
   const [opened, setOpened] = useState(false);
@@ -62,13 +67,6 @@ export function BountyFiltersDropdown() {
     [setFilters]
   );
 
-  const chipProps: Partial<ChipProps> = {
-    size: 'sm',
-    radius: 'xl',
-    variant: 'filled',
-    classNames: classes,
-  };
-
   const showBaseModelFilter = checkSupportsBaseModel(filters.types ?? []);
 
   const target = (
@@ -81,19 +79,9 @@ export function BountyFiltersDropdown() {
       dot={false}
       inline
     >
-      <Button
-        className={classes.actionButton}
-        color="gray"
-        radius="xl"
-        variant={theme.colorScheme === 'dark' ? 'filled' : 'light'}
-        rightIcon={<IconChevronDown className={cx({ [classes.opened]: opened })} size={16} />}
-        onClick={() => setOpened((o) => !o)}
-      >
-        <Group spacing={4} noWrap>
-          <IconFilter size={16} />
-          Filters
-        </Group>
-      </Button>
+      <FilterButton icon={IconFilter} onClick={() => setOpened((o) => !o)} active={opened}>
+        Filters
+      </FilterButton>
     </Indicator>
   );
 
@@ -118,9 +106,9 @@ export function BountyFiltersDropdown() {
           multiple
         >
           {Object.values(BountyType).map((type, index) => (
-            <Chip key={index} value={type} {...chipProps}>
-              {getDisplayName(type)}
-            </Chip>
+            <FilterChip key={index} value={type}>
+              <span>{getDisplayName(type)}</span>
+            </FilterChip>
           ))}
         </Chip.Group>
       </Stack>
@@ -133,10 +121,10 @@ export function BountyFiltersDropdown() {
             onChange={(baseModels: BaseModel[]) => setFilters({ baseModels })}
             multiple
           >
-            {constants.baseModels.map((baseModel, index) => (
-              <Chip key={index} value={baseModel} {...chipProps}>
-                {baseModel}
-              </Chip>
+            {activeBaseModels.map((baseModel, index) => (
+              <FilterChip key={index} value={baseModel}>
+                <span>{baseModel}</span>
+              </FilterChip>
             ))}
           </Chip.Group>
         </Stack>
@@ -152,7 +140,7 @@ export function BountyFiltersDropdown() {
               checked={filters.mode === mode}
               onChange={(checked) => setFilters({ mode: checked ? mode : undefined })}
             >
-              {getDisplayName(mode)}
+              <span>{getDisplayName(mode)}</span>
             </Chip>
           ))}
         </Group>
@@ -161,14 +149,13 @@ export function BountyFiltersDropdown() {
         <Divider label="Bounty status" labelProps={{ weight: 'bold', size: 'sm' }} />
         <Group spacing={8}>
           {Object.values(BountyStatus).map((status, index) => (
-            <Chip
-              {...chipProps}
+            <FilterChip
               key={index}
               checked={filters.status === status}
               onChange={(checked) => setFilters({ status: checked ? status : undefined })}
             >
-              {getDisplayName(status)}
-            </Chip>
+              <span>{getDisplayName(status)}</span>
+            </FilterChip>
           ))}
         </Group>
       </Stack>
@@ -192,16 +179,17 @@ export function BountyFiltersDropdown() {
         <Drawer
           opened={opened}
           onClose={() => setOpened(false)}
-          withCloseButton={false}
           size="90%"
           position="bottom"
           styles={{
-            body: { padding: 16 },
             drawer: {
               height: 'auto',
-              maxHeight: 'calc(100dvh - var(--mantine-header-height))',
+              maxHeight: 'calc(100dvh - var(--header-height))',
               overflowY: 'auto',
             },
+            body: { padding: 16, paddingTop: 0, overflowY: 'auto' },
+            header: { padding: '4px 8px' },
+            closeButton: { height: 32, width: 32, '& > svg': { width: 24, height: 24 } },
           }}
         >
           {dropdown}
@@ -226,6 +214,8 @@ export function BountyFiltersDropdown() {
   );
 }
 
+type Props = Omit<ButtonProps, 'onClick' | 'children' | 'rightIcon'>;
+
 const useStyles = createStyles((theme) => ({
   label: {
     fontSize: 12,
@@ -248,8 +238,11 @@ const useStyles = createStyles((theme) => ({
   },
 
   actionButton: {
-    [theme.fn.smallerThan('sm')]: {
+    [containerQuery.smallerThan('sm')]: {
       width: '100%',
     },
   },
+
+  indicatorRoot: { lineHeight: 1 },
+  indicatorIndicator: { lineHeight: 1.6 },
 }));

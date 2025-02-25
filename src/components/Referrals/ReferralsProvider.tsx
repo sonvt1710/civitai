@@ -1,17 +1,14 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { z } from 'zod';
-import { deleteCookies, setCookie } from '~/utils/cookies-helpers';
+import { setCookie } from '~/utils/cookies-helpers';
 import dayjs from 'dayjs';
-import { useCookies } from '~/providers/CookiesProvider';
 import { useCurrentUser } from '~/hooks/useCurrentUser';
 
 type ReferralsState = {
   code?: string;
   source?: string;
   landingPage?: string;
-  loginRedirectReason?: string;
-  setLoginRedirectReason?: (reason: string) => void;
 };
 
 const ReferralsContext = createContext<ReferralsState | null>(null);
@@ -27,17 +24,21 @@ const schema = z.object({
   ref_source: z.string().optional(),
 });
 
-export const ReferralsProvider = ({ children }: { children: React.ReactNode }) => {
+export const ReferralsProvider = ({
+  children,
+  ...referrals
+}: {
+  children: React.ReactNode;
+  code?: string;
+  source?: string;
+  landingPage?: string;
+}) => {
   const user = useCurrentUser();
   const router = useRouter();
-  const { referrals } = useCookies();
   const result = schema.safeParse(router.query);
   const [code, setCode] = useState<string | undefined>(referrals.code);
   const [source, setSource] = useState<string | undefined>(referrals.source);
   const [landingPage, setLandingPage] = useState<string | undefined>(referrals.landingPage);
-  const [loginRedirectReason, _setLoginRedirectReason] = useState<string | undefined>(
-    referrals.loginRedirectReason
-  );
 
   useEffect(() => {
     if (result.success && !user?.referral) {
@@ -66,18 +67,12 @@ export const ReferralsProvider = ({ children }: { children: React.ReactNode }) =
     }
   }, [result.success, user]);
 
-  const setLoginRedirectReason = (reason: string) => {
-    setCookie('ref_login_redirect_reason', reason, dayjs().add(5, 'day').toDate());
-    _setLoginRedirectReason(reason);
-  };
-
   return (
     <ReferralsContext.Provider
       value={{
         code,
         source,
         landingPage,
-        setLoginRedirectReason,
       }}
     >
       {children}

@@ -1,21 +1,45 @@
-import { Alert, Group, Stack, ThemeIcon, Text } from '@mantine/core';
+import { Alert, Group, Stack, Text, ThemeIcon, MantineSize, Button } from '@mantine/core';
 import { IconMail } from '@tabler/icons-react';
 import { signIn } from 'next-auth/react';
+import { useRouter } from 'next/router';
 import { useState } from 'react';
 import { z } from 'zod';
-import { SocialButton } from '~/components/Social/SocialButton';
 import { Form, InputText, useForm } from '~/libs/form';
 
-const schema = z.object({ email: z.string().trim().toLowerCase().email() });
-export const EmailLogin = () => {
-  const [submitted, setSubmitted] = useState(false);
+const schema = z.object({
+  email: z.string().trim().toLowerCase().email(),
+});
+type Status = 'idle' | 'loading' | 'submitted';
+export const EmailLogin = ({
+  returnUrl,
+  size,
+  status,
+  onStatusChange,
+}: {
+  returnUrl: string;
+  size?: MantineSize;
+  status: Status;
+  onStatusChange: (value: Status) => void;
+}) => {
+  const router = useRouter();
   const form = useForm({ schema });
-  const handleEmailLogin = ({ email }: z.infer<typeof schema>) => {
-    setSubmitted(true);
-    signIn('email', { email, redirect: false });
+  const handleEmailLogin = async ({ email }: z.infer<typeof schema>) => {
+    onStatusChange('loading');
+    const result = await signIn('email', { email, redirect: false, callbackUrl: returnUrl });
+    if (result?.error === 'AccessDenied') {
+      router.replace({ query: { error: 'NoExtraEmails' } }, undefined, { shallow: true });
+      onStatusChange('idle');
+      return;
+    } else if (result?.error) {
+      router.replace({ query: { error: 'TooManyRequests' } }, undefined, { shallow: true });
+      onStatusChange('idle');
+      return;
+    }
+
+    onStatusChange('submitted');
   };
 
-  if (submitted)
+  if (status === 'submitted')
     return (
       <Alert pl={15}>
         <Group noWrap>
@@ -36,17 +60,17 @@ export const EmailLogin = () => {
     );
 
   return (
-    <Form form={form} onSubmit={handleEmailLogin}>
-      <Stack>
-        <InputText
-          name="email"
-          type="email"
-          label="Email"
-          placeholder="coolperson@email.com"
-          withAsterisk
-        />
-        <SocialButton provider="email" type="submit" />
-      </Stack>
+    <Form form={form} onSubmit={handleEmailLogin} className="flex flex-col gap-3">
+      <InputText
+        name="email"
+        type="email"
+        placeholder="coolperson@email.com"
+        withAsterisk
+        size={size}
+      />
+      <Button type="submit" loading={status === 'loading'} size={size}>
+        Continue
+      </Button>
     </Form>
   );
 };

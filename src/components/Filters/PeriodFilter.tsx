@@ -1,7 +1,7 @@
-import { Chip, createStyles } from '@mantine/core';
-import { MetricTimeframe } from '@prisma/client';
+import { Chip } from '@mantine/core';
 import { useRouter } from 'next/router';
 import { useCallback } from 'react';
+import { FilterChip } from '~/components/Filters/FilterChip';
 import { PeriodModeToggle } from '~/components/Filters/PeriodModeToggle';
 import { IsClient } from '~/components/IsClient/IsClient';
 import { SelectMenu } from '~/components/SelectMenu/SelectMenu';
@@ -12,6 +12,7 @@ import {
   useFiltersContext,
   useSetFilters,
 } from '~/providers/FiltersProvider';
+import { MetricTimeframe } from '~/shared/utils/prisma/enums';
 import { removeEmpty } from '~/utils/object-helpers';
 import { getDisplayName } from '~/utils/string-helpers';
 
@@ -22,24 +23,6 @@ export function PeriodFilter(props: PeriodFilterProps) {
   if (props.value) return <DumbPeriodFilter {...props} />;
   return <StatefulPeriodFilter {...props} type={props.type} />;
 }
-
-const useStyles = createStyles((theme) => ({
-  label: {
-    fontSize: 12,
-    fontWeight: 600,
-
-    '&[data-checked]': {
-      '&, &:hover': {
-        color: theme.colorScheme === 'dark' ? theme.white : theme.black,
-        border: `1px solid ${theme.colors[theme.primaryColor][theme.fn.primaryShade()]}`,
-      },
-
-      '&[data-variant="filled"]': {
-        backgroundColor: 'transparent',
-      },
-    },
-  },
-}));
 
 type DumbProps = {
   type: FilterSubTypes;
@@ -57,7 +40,6 @@ function DumbPeriodFilter({
   hideMode,
   variant = 'menu',
 }: DumbProps) {
-  const { classes } = useStyles();
   const showPeriodMode = !hideMode && hasPeriodMode(type);
   const options = periodOptions.map((x) => ({ label: getDisplayName(x), value: x }));
 
@@ -77,17 +59,9 @@ function DumbPeriodFilter({
       {variant === 'chips' && (
         <Chip.Group spacing={8} value={value} onChange={onChange}>
           {options.map((x, index) => (
-            <Chip
-              key={index}
-              value={x.value}
-              classNames={classes}
-              size="sm"
-              radius="xl"
-              variant="filled"
-              tt="capitalize"
-            >
-              {x.label}
-            </Chip>
+            <FilterChip key={index} value={x.value}>
+              <span>{x.label}</span>
+            </FilterChip>
           ))}
         </Chip.Group>
       )}
@@ -107,7 +81,18 @@ function StatefulPeriodFilter({ type, disabled, hideMode, variant }: StatefulPro
   const { query, pathname, replace } = useRouter();
 
   const globalPeriod = useFiltersContext(
-    useCallback((state) => (type !== 'collections' ? state[type].period : undefined), [type])
+    useCallback(
+      (state) =>
+        type !== 'collections' &&
+        type !== 'clubs' &&
+        type !== 'threads' &&
+        type !== 'generation' &&
+        type !== 'tools' &&
+        type !== 'buzzWithdrawalRequests'
+          ? state[type].period
+          : undefined,
+      [type]
+    )
   );
   const queryPeriod = query.period as typeof globalPeriod | undefined;
 

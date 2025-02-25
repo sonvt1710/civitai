@@ -1,20 +1,31 @@
 import {
   declineReviewHandler,
   deleteModelVersionHandler,
+  earlyAccessModelVersionsOnTimeframeHandler,
   getModelVersionHandler,
   getModelVersionRunStrategiesHandler,
+  modelVersionGeneratedImagesOnTimeframeHandler,
   publishModelVersionHandler,
   requestReviewHandler,
   toggleNotifyEarlyAccessHandler,
   unpublishModelVersionHandler,
   upsertModelVersionHandler,
+  getVersionLicenseHandler,
+  modelVersionEarlyAccessPurchaseHandler,
+  modelVersionDonationGoalsHandler,
+  getModelVersionOwnerHandler,
+  getModelVersionForTrainingReviewHandler,
+  publishPrivateModelVersionHandler,
 } from '~/server/controllers/model-version.controller';
 import { getByIdSchema } from '~/server/schema/base.schema';
 import {
   deleteExplorationPromptSchema,
+  earlyAccessModelVersionsOnTimeframeSchema,
   getModelVersionByModelTypeSchema,
   getModelVersionSchema,
+  modelVersionEarlyAccessPurchase,
   modelVersionUpsertSchema2,
+  modelVersionsGeneratedImagesOnTimeframeSchema,
   publishVersionSchema,
   upsertExplorationPromptSchema,
 } from '~/server/schema/model-version.schema';
@@ -45,10 +56,12 @@ const isOwnerOrModerator = middleware(async ({ ctx, input, next }) => {
   const { id: userId } = ctx.user;
   const { id } = input as { id: number };
 
-  const modelId = (await getVersionById({ id, select: { modelId: true } }))?.modelId ?? 0;
-  const ownerId = (await getModel({ id: modelId, select: { userId: true } }))?.userId ?? -1;
+  if (id) {
+    const modelId = (await getVersionById({ id, select: { modelId: true } }))?.modelId ?? 0;
+    const ownerId = (await getModel({ id: modelId, select: { userId: true } }))?.userId ?? -1;
 
-  if (userId !== ownerId) throw throwAuthorizationError();
+    if (userId !== ownerId) throw throwAuthorizationError();
+  }
 
   return next({
     ctx: {
@@ -60,6 +73,7 @@ const isOwnerOrModerator = middleware(async ({ ctx, input, next }) => {
 
 export const modelVersionRouter = router({
   getById: publicProcedure.input(getModelVersionSchema).query(getModelVersionHandler),
+  getOwner: publicProcedure.input(getByIdSchema).query(getModelVersionOwnerHandler),
   getRunStrategies: publicProcedure.input(getByIdSchema).query(getModelVersionRunStrategiesHandler),
   getExplorationPromptsById: publicProcedure
     .input(getByIdSchema)
@@ -68,7 +82,10 @@ export const modelVersionRouter = router({
     .input(getByIdSchema)
     .use(isFlagProtected('earlyAccessModel'))
     .mutation(toggleNotifyEarlyAccessHandler),
-  upsert: guardedProcedure.input(modelVersionUpsertSchema2).mutation(upsertModelVersionHandler),
+  upsert: guardedProcedure
+    .input(modelVersionUpsertSchema2)
+    .use(isOwnerOrModerator)
+    .mutation(upsertModelVersionHandler),
   delete: protectedProcedure
     .input(getByIdSchema)
     .use(isOwnerOrModerator)
@@ -97,4 +114,21 @@ export const modelVersionRouter = router({
   getModelVersionsByModelType: protectedProcedure
     .input(getModelVersionByModelTypeSchema)
     .query(({ input }) => getModelVersionsByModelType(input)),
+  earlyAccessModelVersionsOnTimeframe: protectedProcedure
+    .input(earlyAccessModelVersionsOnTimeframeSchema)
+    .query(earlyAccessModelVersionsOnTimeframeHandler),
+  modelVersionsGeneratedImagesOnTimeframe: protectedProcedure
+    .input(modelVersionsGeneratedImagesOnTimeframeSchema)
+    .query(modelVersionGeneratedImagesOnTimeframeHandler),
+  getLicense: publicProcedure.input(getByIdSchema).query(getVersionLicenseHandler),
+  earlyAccessPurchase: protectedProcedure
+    .input(modelVersionEarlyAccessPurchase)
+    .mutation(modelVersionEarlyAccessPurchaseHandler),
+  donationGoals: publicProcedure.input(getByIdSchema).query(modelVersionDonationGoalsHandler),
+  getTrainingDetails: moderatorProcedure
+    .input(getByIdSchema)
+    .query(getModelVersionForTrainingReviewHandler),
+  publishPrivateModelVersion: guardedProcedure
+    .input(getByIdSchema)
+    .mutation(publishPrivateModelVersionHandler),
 });
