@@ -1,32 +1,76 @@
-import { Box, Group, SegmentedControl, SegmentedControlProps, Stack, Tabs } from '@mantine/core';
-import { MetricTimeframe } from '@prisma/client';
-import React, { useMemo, useState } from 'react';
+import {
+  Box,
+  Group,
+  SegmentedControl,
+  SegmentedControlProps,
+  Stack,
+  createStyles,
+} from '@mantine/core';
+import { useState } from 'react';
+import { Availability, MetricTimeframe } from '~/shared/utils/prisma/enums';
 
 import { NotFound } from '~/components/AppLayout/NotFound';
+import { Page } from '~/components/AppLayout/Page';
 import { CategoryTags } from '~/components/CategoryTags/CategoryTags';
-import { PeriodFilter, SortFilter } from '~/components/Filters';
+import { SortFilter } from '~/components/Filters';
 import { MasonryContainer } from '~/components/MasonryColumns/MasonryContainer';
 import { MasonryProvider } from '~/components/MasonryColumns/MasonryProvider';
 import { ModelFiltersDropdown } from '~/components/Model/Infinite/ModelFiltersDropdown';
 import { ModelsInfinite } from '~/components/Model/Infinite/ModelsInfinite';
 import { useModelQueryParams } from '~/components/Model/model.utils';
+import { UserProfileLayout } from '~/components/Profile/old/OldProfileLayout';
 import { UserDraftModels } from '~/components/User/UserDraftModels';
 import UserTrainingModels from '~/components/User/UserTrainingModels';
 import { useCurrentUser } from '~/hooks/useCurrentUser';
 import { useFeatureFlags } from '~/providers/FeatureFlagsProvider';
 import { constants } from '~/server/common/constants';
 import { ModelSort } from '~/server/common/enums';
+import { dbRead } from '~/server/db/client';
+import { createServerSideProps } from '~/server/utils/server-side-helpers';
+import { containerQuery } from '~/utils/mantine-css-helpers';
 import { postgresSlugify } from '~/utils/string-helpers';
-import { UserProfileLayout } from '~/components/Profile/old/OldProfileLayout';
 
-type SectionTypes = 'published' | 'draft' | 'training';
+type SectionTypes = 'published' | 'private' | 'draft' | 'training';
 
-export default function UserModelsPage() {
+const useStyles = createStyles(() => ({
+  filtersWrapper: {
+    [containerQuery.smallerThan('sm')]: {
+      width: '100%',
+
+      '> *': { flexGrow: 1 },
+    },
+  },
+}));
+
+export const getServerSideProps = createServerSideProps({
+  resolver: async ({ ctx }) => {
+    const username = ctx.query.username as string;
+    const user = await dbRead.user.findUnique({ where: { username }, select: { bannedAt: true } });
+
+    if (user?.bannedAt)
+      return {
+        redirect: { destination: `/user/${username}`, permanent: true },
+      };
+  },
+});
+
+function UserModelsPage() {
   const currentUser = useCurrentUser();
   const features = useFeatureFlags();
+  const { classes } = useStyles();
   const { set, section: querySection, ...queryFilters } = useModelQueryParams();
   const period = queryFilters.period ?? MetricTimeframe.AllTime;
   const sort = queryFilters.sort ?? ModelSort.Newest;
+  const hidden = queryFilters.hidden ?? false;
+  const followed = queryFilters.followed ?? false;
+  const earlyAccess = queryFilters.earlyAccess ?? false;
+  const types = queryFilters.types ?? undefined;
+  const checkpointType = queryFilters.checkpointType ?? undefined;
+  const status = queryFilters.status ?? undefined;
+  const fileFormats = queryFilters.fileFormats ?? undefined;
+  const fromPlatform = queryFilters.fromPlatform ?? false;
+  const baseModels = queryFilters.baseModels ?? undefined;
+  const supportsGeneration = queryFilters.supportsGeneration ?? false;
   const username = queryFilters.username ?? '';
   const selfView =
     !!currentUser && postgresSlugify(currentUser.username) === postgresSlugify(username);
@@ -35,30 +79,21 @@ export default function UserModelsPage() {
     selfView ? querySection ?? 'published' : 'published'
   );
   const viewingPublished = section === 'published';
+  const viewingPrivate = section === 'private';
   const viewingDraft = section === 'draft';
   const viewingTraining = section === 'training' && features.imageTrainingResults;
-  const Wrapper = useMemo(
-    () =>
-      ({ children }: { children: React.ReactNode }) =>
-        features.profileOverhaul ? (
-          <Box mt="md">{children}</Box>
-        ) : (
-          <Tabs.Panel value="/models">{children}</Tabs.Panel>
-        ),
-    [features.profileOverhaul]
-  );
 
   // currently not showing any content if the username is undefined
   if (!username) return <NotFound />;
 
   return (
-    <Wrapper>
+    <Box mt="md">
       <MasonryProvider
         columnWidth={constants.cardSizes.model}
         maxColumnCount={7}
         maxSingleColumnWidth={450}
       >
-        <MasonryContainer fluid>
+        <MasonryContainer p={0}>
           <Stack spacing="xs">
             <Group spacing={8}>
               {selfView && (
@@ -73,18 +108,13 @@ export default function UserModelsPage() {
               )}
               {viewingPublished && (
                 <>
-                  <SortFilter
-                    type="models"
-                    value={sort}
-                    onChange={(x) => set({ sort: x as ModelSort })}
-                  />
-                  <Group spacing="xs" ml="auto">
-                    <PeriodFilter
+                  <Group className={classes.filtersWrapper} spacing="xs" ml="auto">
+                    <SortFilter
                       type="models"
-                      value={period}
-                      onChange={(x) => set({ period: x })}
+                      value={sort}
+                      onChange={(x) => set({ sort: x as ModelSort })}
                     />
-                    <ModelFiltersDropdown />
+                    <ModelFiltersDropdown filterMode="query" position="left" size="sm" compact />
                   </Group>
                 </>
               )}
@@ -97,7 +127,45 @@ export default function UserModelsPage() {
                     ...queryFilters,
                     sort,
                     period,
+                    pending: true,
+                    hidden,
+                    followed,
+                    earlyAccess,
+                    types,
+                    checkpointType,
+                    status,
+                    fileFormats,
+                    fromPlatform,
+                    baseModels,
+                    supportsGeneration,
                   }}
+                  showEmptyCta={selfView}
+                  disableStoreFilters
+                />
+              </>
+            ) : viewingPrivate ? (
+              <>
+                <CategoryTags />
+                <ModelsInfinite
+                  filters={{
+                    ...queryFilters,
+                    sort,
+                    period,
+                    pending: true,
+                    hidden,
+                    followed,
+                    earlyAccess,
+                    types,
+                    checkpointType,
+                    status,
+                    fileFormats,
+                    fromPlatform,
+                    baseModels,
+                    supportsGeneration,
+                    availability: Availability.Private,
+                  }}
+                  showEmptyCta={selfView}
+                  disableStoreFilters
                 />
               </>
             ) : viewingDraft ? (
@@ -110,7 +178,7 @@ export default function UserModelsPage() {
           </Stack>
         </MasonryContainer>
       </MasonryProvider>
-    </Wrapper>
+    </Box>
   );
 }
 
@@ -127,6 +195,8 @@ function ContentToggle({
     { label: 'Published', value: 'published' },
     { label: 'Draft', value: 'draft' },
   ];
+
+  if (features.privateModels) tabs.push({ label: 'Private', value: 'private' });
   if (features.imageTrainingResults) tabs.push({ label: 'Training', value: 'training' });
 
   return (
@@ -135,14 +205,9 @@ function ContentToggle({
       value={value}
       onChange={onChange}
       data={tabs}
-      sx={(theme) => ({
-        [theme.fn.smallerThan('sm')]: {
-          // flex: 1,
-          width: '100%',
-        },
-      })}
+      className="sm:w-full md:w-auto"
     />
   );
 }
 
-UserModelsPage.getLayout = UserProfileLayout;
+export default Page(UserModelsPage, { getLayout: UserProfileLayout });

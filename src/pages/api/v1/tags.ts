@@ -1,4 +1,4 @@
-import { TagTarget } from '@prisma/client';
+import { TagTarget } from '~/shared/utils/prisma/enums';
 import { TRPCError } from '@trpc/server';
 import { getHTTPStatusCodeFromError } from '@trpc/server/http';
 import { NextApiRequest, NextApiResponse } from 'next';
@@ -25,7 +25,6 @@ export default PublicEndpoint(async function handler(req: NextApiRequest, res: N
       items:
         items?.map(({ models = [], name }) => ({
           name,
-          modelCount: models.length ? models.length : undefined,
           link: `${baseUrl.origin}/api/v1/models?tag=${name}`,
         })) ?? [],
       metadata: {

@@ -3,10 +3,16 @@ import {
   HubConnection,
   HubConnectionBuilder,
   HubConnectionState,
+  LogLevel,
 } from '@microsoft/signalr';
-import { env } from '~/env/client.mjs';
-import type { WorkerIncomingMessage, WorkerOutgoingMessage } from './types';
-import { Deferred, EventEmitter } from './utils';
+import { env } from '~/env/client';
+import type {
+  SignalConnectionState,
+  SignalStatus,
+  WorkerIncomingMessage,
+  WorkerOutgoingMessage,
+} from './types';
+import { EventEmitter } from './utils';
 
 // --------------------------------
 // Types
@@ -14,22 +20,66 @@ import { Deferred, EventEmitter } from './utils';
 interface SharedWorkerGlobalScope {
   onconnect: (event: MessageEvent) => void;
 }
+
 const _self: SharedWorkerGlobalScope = self as any;
 
-let connection: HubConnection | undefined;
+let connectionState: SignalConnectionState = { state: null };
+let connectedUserId: number | null = null;
+let connection: HubConnection | null = null;
+// let pingInterval: NodeJS.Timer | null = null;
 const events: Record<string, (data: unknown) => void> = {};
-const deferred = new Deferred<void>();
 
 const emitter = new EventEmitter<{
-  connectionReady: undefined;
-  connectionClosed: { message?: string };
-  connectionError: { message?: string };
-  connectionReconnected: undefined;
   eventReceived: { target: string; payload: any };
+  stateChanged: SignalConnectionState;
   pong: undefined;
 }>();
 
-const getConnection = async ({ token }: { token: string }) => {
+function setConnectionState(args: { state: SignalStatus; message?: string }) {
+  emitter.emit('stateChanged', args);
+}
+
+function emitCurrentConnectionState() {
+  emitter.emit('stateChanged', connectionState);
+}
+
+emitter.on('stateChanged', ({ state, message }) => {
+  connectionState = { state, message };
+  if (state === 'closed') connection = null;
+  console.log(`SignalR status: ${state}`, message);
+});
+
+// let interval: NodeJS.Timer | undefined;
+// if (interval) clearInterval(interval);
+// interval = setInterval(emitCurrentConnectionState, 10 * 1000);
+
+async function connect() {
+  try {
+    if (!connection) throw new Error('missing SignalR connection');
+    // don't try to connect unless the connection is closed
+    if (connection.state !== HubConnectionState.Disconnected) return;
+    try {
+      await connection.start();
+      setConnectionState({ state: 'connected' });
+    } catch (err) {
+      console.log(err);
+      setTimeout(() => connect(), 5000);
+    }
+  } catch (e) {
+    setConnectionState({ state: 'closed', message: (e as Error).message });
+  }
+}
+
+const buildHubConnection = async ({ userId, token }: { token: string; userId: number }) => {
+  if (userId !== connectedUserId) {
+    connectedUserId = userId;
+    if (connection) {
+      (connection as any)._closedCallbacks = [];
+      await connection.stop();
+      connection = null;
+    }
+  }
+
   if (connection) return connection;
 
   connection = new HubConnectionBuilder()
@@ -38,70 +88,49 @@ const getConnection = async ({ token }: { token: string }) => {
       skipNegotiation: true,
       transport: HttpTransportType.WebSockets,
     })
-    .withAutomaticReconnect()
+    .configureLogging(LogLevel.Information)
+    .withAutomaticReconnect([0, 2, 10, 18, 30, 45, 60, 90])
     .build();
 
-  try {
-    await connection.start();
-    connection.onreconnected(() => {
-      emitter.emit('connectionReady', undefined);
-      emitter.emit('connectionReconnected', undefined);
-    });
-    connection.onreconnecting((error) =>
-      emitter.emit('connectionError', { message: JSON.stringify(error) })
-    );
-    connection.onclose((error) =>
-      emitter.emit('connectionError', { message: JSON.stringify(error) })
-    );
+  connection.onreconnected(() => {
+    setConnectionState({ state: 'connected' });
+  });
+  connection.onreconnecting((error) => {
+    setConnectionState({ state: 'reconnecting', message: JSON.stringify(error) });
+  });
+  connection.onclose((error) => {
+    setConnectionState({ state: 'closed', message: JSON.stringify(error) });
+  });
+  connection.on('Pong', () => console.log('pong'));
 
-    // send a ping every 5 minutes
-    setInterval(async () => {
-      if (!connection || connection.state !== HubConnectionState.Connected) return;
-      await connection.send('ping');
-    }, 5 * 60 * 1000);
-
-    // try to reconnect every 5 seconds
-    setInterval(async () => {
-      if (!connection) return;
-      if (connection.state === HubConnectionState.Disconnected) {
-        await connection.start();
-      }
-    }, 5 * 1000);
-  } catch (e) {
-    emitter.emit('connectionError', { message: JSON.stringify(e) });
+  for (const [target, event] of Object.entries(events)) {
+    connection.on(target, event);
   }
-
   return connection;
 };
 
-const registerEvents = async (targets: string[]) => {
-  await deferred.promise;
-  if (!connection) emitter.emit('connectionError', { message: 'unable to establish a connection' });
-  else {
-    for (const target of targets) {
-      if (!events[target]) {
-        events[target] = (payload) => emitter.emit('eventReceived', { target, payload });
+async function registerEvents(targets: string[]) {
+  for (const target of targets) {
+    if (!events[target]) {
+      events[target] = (payload) => emitter.emit('eventReceived', { target, payload });
+      if (connection) {
         connection.on(target, events[target]);
       }
     }
   }
-};
+}
 
 const start = async (port: MessagePort) => {
   if (!port.postMessage) return;
-  port.start();
+  if (port.start) port.start();
 
   const postMessage = (req: WorkerOutgoingMessage) => port.postMessage(req);
   postMessage({ type: 'worker:ready' });
+  postMessage({ type: 'connection:state', ...connectionState });
 
   const emitterOffHandlers = [
-    emitter.on('connectionReconnected', () => postMessage({ type: 'connection:reconnected' })),
-    emitter.on('connectionReady', () => postMessage({ type: 'connection:ready' })),
-    emitter.on('connectionClosed', ({ message }) =>
-      postMessage({ type: 'connection:closed', message })
-    ),
-    emitter.on('connectionError', ({ message }) =>
-      postMessage({ type: 'connection:error', message })
+    emitter.on('stateChanged', ({ state, message }) =>
+      postMessage({ type: 'connection:state', state, message })
     ),
     emitter.on('eventReceived', ({ target, payload }) =>
       postMessage({ type: 'event:received', target, payload })
@@ -111,16 +140,20 @@ const start = async (port: MessagePort) => {
 
   // incoming messages
   port.onmessage = async ({ data }: { data: WorkerIncomingMessage }) => {
-    if (data.type === 'connection:init')
-      getConnection({ token: data.token }).then(() => {
-        emitter.emit('connectionReady', undefined);
-        deferred.resolve();
-      });
-    else if (data.type === 'event:register') registerEvents([data.target]);
+    if (data.type === 'connection:init') {
+      await buildHubConnection({ token: data.token, userId: data.userId });
+      await connect();
+    } else if (data.type === 'event:register') registerEvents([data.target]);
     else if (data.type === 'beforeunload') {
       emitterOffHandlers.forEach((fn) => fn());
       port.close();
-    } else if (data.type === 'ping') emitter.emit('pong', undefined);
+    } else if (data.type === 'ping') {
+      emitter.emit('pong', undefined);
+      emitCurrentConnectionState();
+    } else if (data.type === 'topic:register') {
+      const x = await connection?.invoke('subscribe', data.topic);
+      console.log(x);
+    } else if (data.type === 'send') connection?.send(data.target, data.args);
   };
 };
 

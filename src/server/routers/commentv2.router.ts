@@ -3,27 +3,26 @@ import {
   deleteCommentV2Handler,
   getCommentCountV2Handler,
   getCommentsThreadDetailsHandler,
-  getInfiniteCommentsV2Handler,
   toggleLockThreadDetailsHandler,
   upsertCommentV2Handler,
   getCommentHandler,
   toggleHideCommentHandler,
 } from './../controllers/commentv2.controller';
-import {
-  commentConnectorSchema,
-  getCommentsV2Schema,
-  upsertCommentv2Schema,
-} from './../schema/commentv2.schema';
+import { commentConnectorSchema, upsertCommentv2Schema } from './../schema/commentv2.schema';
 import {
   middleware,
   router,
   publicProcedure,
   protectedProcedure,
   guardedProcedure,
+  moderatorProcedure,
 } from '~/server/trpc';
 import { dbRead } from '~/server/db/client';
 import { throwAuthorizationError } from '~/server/utils/errorHandling';
 import { toggleHideCommentSchema } from '~/server/schema/commentv2.schema';
+import { rateLimit } from '~/server/middleware.trpc';
+import { commentRateLimits } from '~/server/schema/comment.schema';
+import { togglePinComment } from '~/server/services/commentsv2.service';
 
 const isOwnerOrModerator = middleware(async ({ ctx, next, input = {} }) => {
   if (!ctx.user) throw throwAuthorizationError();
@@ -45,22 +44,13 @@ const isOwnerOrModerator = middleware(async ({ ctx, next, input = {} }) => {
   });
 });
 
-const isModerator = middleware(async ({ ctx, next }) => {
-  if (!ctx.user?.isModerator) throw throwAuthorizationError();
-  return next({
-    ctx: {
-      user: ctx.user,
-    },
-  });
-});
-
 export const commentv2Router = router({
-  getInfinite: publicProcedure.input(getCommentsV2Schema).query(getInfiniteCommentsV2Handler),
   getCount: publicProcedure.input(commentConnectorSchema).query(getCommentCountV2Handler),
   getSingle: publicProcedure.input(getByIdSchema).query(getCommentHandler),
   upsert: guardedProcedure
     .input(upsertCommentv2Schema)
     .use(isOwnerOrModerator)
+    .use(rateLimit(commentRateLimits))
     .mutation(upsertCommentV2Handler),
   delete: protectedProcedure
     .input(getByIdSchema)
@@ -69,9 +59,11 @@ export const commentv2Router = router({
   getThreadDetails: publicProcedure
     .input(commentConnectorSchema)
     .query(getCommentsThreadDetailsHandler),
-  toggleLockThread: protectedProcedure
+  toggleLockThread: moderatorProcedure
     .input(commentConnectorSchema)
-    .use(isModerator)
     .mutation(toggleLockThreadDetailsHandler),
   toggleHide: protectedProcedure.input(toggleHideCommentSchema).mutation(toggleHideCommentHandler),
+  togglePinned: moderatorProcedure
+    .input(getByIdSchema)
+    .mutation(({ input }) => togglePinComment({ id: input.id })),
 });

@@ -1,33 +1,33 @@
-import { ModelHashType, Prisma } from '@prisma/client';
-import { ModelFileType } from '~/server/common/constants';
-import { modelHashSelect } from '~/server/selectors/modelHash.selector';
-import { getModelVersionDetailsSelect } from '~/server/selectors/modelVersion.selector';
-import { simpleUserSelect } from '~/server/selectors/user.selector';
+import { Prisma } from '@prisma/client';
+import {
+  getModelVersionDetailsSelect,
+  getModelVersionsForSearchIndex,
+} from '~/server/selectors/modelVersion.selector';
+import { simpleUserSelect, userWithCosmeticsSelect } from '~/server/selectors/user.selector';
+import { profileImageSelect } from './image.selector';
 import { modelFileSelect } from './modelFile.selector';
+import {
+  Availability,
+  MetricTimeframe,
+  ModelHashType,
+  ModelStatus,
+} from '~/shared/utils/prisma/enums';
+import { modelHashSelect } from './modelHash.selector';
+import { ModelFileType } from '../common/constants';
 
 export const getAllModelsWithVersionsSelect = Prisma.validator<Prisma.ModelSelect>()({
   id: true,
   name: true,
   description: true,
   type: true,
-  // TODO [bw]: do we need uploadType here?
+  uploadType: true,
   poi: true,
-  nsfw: true,
+  nsfwLevel: true,
   allowNoCredit: true,
   allowCommercialUse: true,
   allowDerivatives: true,
   allowDifferentLicense: true,
   mode: true,
-  rank: {
-    select: {
-      downloadCountAllTime: true,
-      commentCountAllTime: true,
-      favoriteCountAllTime: true,
-      ratingCountAllTime: true,
-      ratingAllTime: true,
-      tippedAmountCountAllTimeRank: true,
-    },
-  },
   user: {
     select: {
       image: true,
@@ -38,13 +38,6 @@ export const getAllModelsWithVersionsSelect = Prisma.validator<Prisma.ModelSelec
     select: getModelVersionDetailsSelect,
     orderBy: { index: 'asc' },
   },
-  tagsOnModels: {
-    select: {
-      tag: {
-        select: { name: true },
-      },
-    },
-  },
 });
 
 export const modelWithDetailsSelect = Prisma.validator<Prisma.ModelSelect>()({
@@ -52,6 +45,8 @@ export const modelWithDetailsSelect = Prisma.validator<Prisma.ModelSelect>()({
   name: true,
   description: true,
   poi: true,
+  minor: true,
+  nsfwLevel: true,
   nsfw: true,
   type: true,
   uploadType: true,
@@ -70,6 +65,8 @@ export const modelWithDetailsSelect = Prisma.validator<Prisma.ModelSelect>()({
   meta: true,
   earlyAccessDeadline: true,
   mode: true,
+  availability: true,
+  lockedProperties: true,
   reportStats: {
     select: {
       ownershipProcessing: true,
@@ -84,9 +81,13 @@ export const modelWithDetailsSelect = Prisma.validator<Prisma.ModelSelect>()({
       // TODO.leaderboard: uncomment when migration is done
       // leaderboardShowcase: true,
       rank: { select: { leaderboardRank: true } },
+      profilePicture: {
+        select: profileImageSelect,
+      },
       cosmetics: {
         where: { equippedAt: { not: null } },
         select: {
+          data: true,
           cosmetic: {
             select: {
               id: true,
@@ -118,21 +119,31 @@ export const modelWithDetailsSelect = Prisma.validator<Prisma.ModelSelect>()({
       inaccurate: true,
       baseModel: true,
       baseModelType: true,
-      earlyAccessTimeFrame: true,
+      earlyAccessEndsAt: true,
+      earlyAccessConfig: true,
       status: true,
       publishedAt: true,
       meta: true,
       vaeId: true,
       settings: true,
-      rank: {
+      requireAuth: true,
+      nsfwLevel: true,
+      uploadType: true,
+      usageControl: true,
+      metrics: {
+        where: { timeframe: 'AllTime' },
         select: {
-          downloadCountAllTime: true,
-          ratingCountAllTime: true,
-          ratingAllTime: true,
+          generationCount: true,
+          downloadCount: true,
+          ratingCount: true,
+          rating: true,
+          thumbsUpCount: true,
+          thumbsDownCount: true,
         },
       },
       files: {
         select: modelFileSelect,
+        where: { dataPurged: false },
       },
       generationCoverage: { select: { covered: true } },
       recommendedResources: {
@@ -141,10 +152,10 @@ export const modelWithDetailsSelect = Prisma.validator<Prisma.ModelSelect>()({
           resource: {
             select: {
               id: true,
-              name: true,
-              baseModel: true,
-              trainedWords: true,
-              model: { select: { id: true, name: true, type: true } },
+              // name: true,
+              // baseModel: true,
+              // trainedWords: true,
+              // model: { select: { id: true, name: true, type: true } },
             },
           },
           settings: true,
@@ -152,63 +163,20 @@ export const modelWithDetailsSelect = Prisma.validator<Prisma.ModelSelect>()({
       },
     },
   },
-  rank: {
+  metrics: {
+    where: { timeframe: 'AllTime' },
     select: {
-      downloadCountAllTime: true,
-      ratingCountAllTime: true,
-      ratingAllTime: true,
-      favoriteCountAllTime: true,
-      imageCountAllTime: true,
-      collectedCountAllTime: true,
-      tippedAmountCountAllTime: true,
-    },
-  },
-  tagsOnModels: {
-    select: {
-      tag: {
-        select: { id: true, name: true, unlisted: true },
-      },
-    },
-  },
-});
-
-export const modelForHomePageSelector = Prisma.validator<Prisma.ModelSelect>()({
-  id: true,
-  name: true,
-  type: true,
-  nsfw: true,
-  status: true,
-  createdAt: true,
-  lastVersionAt: true,
-  publishedAt: true,
-  locked: true,
-  earlyAccessDeadline: true,
-  mode: true,
-  rank: {
-    select: {
-      downloadCountAllTime: true,
-      favoriteCountAllTime: true,
-      commentCountAllTime: true,
-      ratingCountAllTime: true,
-      ratingAllTime: true,
-    },
-  },
-  modelVersions: {
-    orderBy: { index: 'asc' },
-    take: 1,
-    select: {
-      id: true,
-      earlyAccessTimeFrame: true,
-      createdAt: true,
-      generationCoverage: { select: { covered: true } },
-    },
-  },
-  user: { select: simpleUserSelect },
-  hashes: {
-    select: modelHashSelect,
-    where: {
-      hashType: ModelHashType.SHA256,
-      fileType: { in: ['Model', 'Pruned Model'] as ModelFileType[] },
+      downloadCount: true,
+      ratingCount: true,
+      rating: true,
+      favoriteCount: true,
+      thumbsUpCount: true,
+      thumbsDownCount: true,
+      imageCount: true,
+      collectedCount: true,
+      tippedAmountCount: true,
+      generationCount: true,
+      commentCount: true,
     },
   },
 });
@@ -217,10 +185,68 @@ export const associatedResourceSelect = Prisma.validator<Prisma.ModelSelect>()({
   id: true,
   name: true,
   type: true,
-  nsfw: true,
+  nsfwLevel: true,
   user: { select: simpleUserSelect },
 });
-const associatedResource = Prisma.validator<Prisma.ModelArgs>()({
+const associatedResource = Prisma.validator<Prisma.ModelFindManyArgs>()({
   select: associatedResourceSelect,
 });
 export type AssociatedResourceModel = Prisma.ModelGetPayload<typeof associatedResource>;
+
+export const modelSearchIndexSelect = Prisma.validator<Prisma.ModelSelect>()({
+  id: true,
+  name: true,
+  type: true,
+  nsfw: true,
+  nsfwLevel: true,
+  minor: true,
+  status: true,
+  createdAt: true,
+  lastVersionAt: true,
+  publishedAt: true,
+  locked: true,
+  earlyAccessDeadline: true,
+  mode: true,
+  checkpointType: true,
+  availability: true,
+  allowNoCredit: true,
+  allowCommercialUse: true,
+  allowDerivatives: true,
+  allowDifferentLicense: true,
+  // Joins:
+  user: {
+    select: userWithCosmeticsSelect,
+  },
+  modelVersions: {
+    select: getModelVersionsForSearchIndex,
+    orderBy: { index: 'asc' as const },
+    where: {
+      status: ModelStatus.Published,
+      availability: {
+        not: Availability.Unsearchable,
+      },
+    },
+  },
+  hashes: {
+    select: modelHashSelect,
+    where: {
+      fileType: { in: ['Model', 'Pruned Model'] as ModelFileType[] },
+      hashType: { notIn: ['AutoV1'] as ModelHashType[] },
+    },
+  },
+  metrics: {
+    select: {
+      commentCount: true,
+      favoriteCount: true,
+      thumbsUpCount: true,
+      downloadCount: true,
+      rating: true,
+      ratingCount: true,
+      collectedCount: true,
+      tippedAmountCount: true,
+    },
+    where: {
+      timeframe: MetricTimeframe.AllTime,
+    },
+  },
+});

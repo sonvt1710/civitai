@@ -64,7 +64,7 @@ export function ClientHistoryStore() {
   useEffect(() => {
     const pushState = history.pushState;
     history.pushState = function (data, unused, url) {
-      pushKey(data.key);
+      if (data?.key) pushKey(data.key);
       return pushState.apply(history, [data, unused, url]);
     };
     return () => {
@@ -72,7 +72,9 @@ export function ClientHistoryStore() {
     };
   }, [pushKey]);
 
-  const handlePopstate = (e: any) => setKey(e.state.key);
+  const handlePopstate = (e: any) => {
+    if (e.state.key) setKey(e.state.key);
+  };
   useWindowEvent('popstate', handlePopstate);
 
   return null;

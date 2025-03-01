@@ -1,10 +1,11 @@
 import { showNotification } from '@mantine/notifications';
-import { ModelType } from '@prisma/client';
-import { useCallback } from 'react';
+import { ModelType } from '~/shared/utils/prisma/enums';
+import { useCallback, useEffect } from 'react';
 import { useCivitaiLink, useCivitaiLinkStore } from '~/components/CivitaiLink/CivitaiLinkProvider';
 import { CommandResourcesAdd } from '~/components/CivitaiLink/shared-types';
 import { ModelHashModel } from '~/server/selectors/modelHash.selector';
 import { trpc } from '~/utils/trpc';
+import { showErrorNotification } from '~/utils/notifications';
 
 const supportedModelTypes: ModelType[] = [
   'Checkpoint',
@@ -14,6 +15,7 @@ const supportedModelTypes: ModelType[] = [
   'LoCon',
   'Controlnet',
   'Upscaler',
+  'DoRA',
 ];
 
 export function CivitaiLinkResourceManager({
@@ -48,7 +50,7 @@ export function CivitaiLinkResourceManager({
     )
   );
   // const activities: Response[] = [];
-  const { data, refetch, isFetched, isFetching } = trpc.model.getDownloadCommand.useQuery(
+  const { data, refetch, isFetched, isFetching, error } = trpc.model.getDownloadCommand.useQuery(
     { modelId, modelVersionId },
     {
       enabled: false,
@@ -57,6 +59,10 @@ export function CivitaiLinkResourceManager({
       },
     }
   );
+
+  useEffect(() => {
+    if (error) showErrorNotification({ error });
+  }, [error]);
 
   if (!connected || !supportedModelTypes.includes(modelType) || !hashes || !hashes.length)
     return fallback ?? null;
@@ -70,7 +76,7 @@ export function CivitaiLinkResourceManager({
     if (resource) return;
     if (!isFetched) refetch();
     else if (data) runAddCommands(data.commands);
-    else showNotification({ message: 'Could not get commands' });
+    else showNotification({ message: `Could not get commands` });
   };
 
   const cancelDownload = () => {
