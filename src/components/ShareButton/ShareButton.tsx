@@ -1,17 +1,18 @@
-import { Group, Popover, Stack, Text, Button, ThemeIcon } from '@mantine/core';
-import React from 'react';
-import { QS } from '~/utils/qs';
-import { SocialIconReddit } from '~/components/ShareButton/Icons/SocialIconReddit';
-import { SocialIconCopy } from '~/components/ShareButton/Icons/SocialIconCopy';
+import { Button, Popover, SimpleGrid, Stack, Text, ThemeIcon } from '@mantine/core';
 import { useClipboard } from '@mantine/hooks';
-import { SocialIconOther } from '~/components/ShareButton/Icons/SocialIconOther';
-import { SocialIconCollect } from '~/components/ShareButton/Icons/SocialIconCollect';
-import { CollectItemInput } from '~/server/schema/collection.schema';
-import { openContext } from '~/providers/CustomModalsProvider';
-import { useLoginRedirect } from '~/components/LoginRedirect/LoginRedirect';
-import { useFeatureFlags } from '~/providers/FeatureFlagsProvider';
-import { useTrackEvent } from '../TrackView/track.utils';
 import { IconBrandX } from '@tabler/icons-react';
+import React from 'react';
+import { SocialIconChat } from '~/components/ShareButton/Icons/SocialIconChat';
+import { SocialIconCollect } from '~/components/ShareButton/Icons/SocialIconCollect';
+import { SocialIconCopy } from '~/components/ShareButton/Icons/SocialIconCopy';
+import { SocialIconOther } from '~/components/ShareButton/Icons/SocialIconOther';
+import { SocialIconReddit } from '~/components/ShareButton/Icons/SocialIconReddit';
+import { openContext } from '~/providers/CustomModalsProvider';
+import { useFeatureFlags } from '~/providers/FeatureFlagsProvider';
+import { CollectItemInput } from '~/server/schema/collection.schema';
+import { QS } from '~/utils/qs';
+import { useTrackEvent } from '../TrackView/track.utils';
+import { requireLogin } from '~/components/Login/requireLogin';
 
 export function ShareButton({
   children,
@@ -25,7 +26,7 @@ export function ShareButton({
   collect?: CollectItemInput;
 }) {
   const clipboard = useClipboard({ timeout: undefined });
-  const { requireLogin } = useLoginRedirect({ reason: 'add-to-collection' });
+  // const { requireLogin } = useLoginRedirect({ reason: 'add-to-collection' });
   const features = useFeatureFlags();
   const { trackShare } = useTrackEvent();
 
@@ -37,7 +38,11 @@ export function ShareButton({
       : `${location.protocol}//${location.host}${initialUrl}`;
 
   // https://web.dev/web-share/
-  const shareLinks = [
+  const shareLinks: {
+    type: string;
+    onClick: (e: React.MouseEvent) => void;
+    render: React.ReactNode;
+  }[] = [
     {
       type: clipboard.copied ? 'Copied' : 'Copy Url',
       onClick: () => {
@@ -79,21 +84,35 @@ export function ShareButton({
     },
   ];
 
+  if (features.chat) {
+    shareLinks.unshift({
+      type: 'Send Chat',
+      onClick: (e: React.MouseEvent) =>
+        requireLogin({ uiEvent: e, cb: () => openContext('chatShareModal', { message: url }) }),
+      render: <SocialIconChat />,
+    });
+  }
+
   if (collect && features.collections) {
     shareLinks.unshift({
       type: 'Save',
-      onClick: () => requireLogin(() => openContext('addToCollection', collect)),
+      onClick: (e: React.MouseEvent) =>
+        requireLogin({
+          uiEvent: e,
+          reason: 'add-to-collection',
+          cb: () => openContext('addToCollection', collect),
+        }),
       render: <SocialIconCollect />,
     });
   }
 
   return (
-    <Popover withArrow shadow="md" position="top-end" width={360}>
+    <Popover withArrow shadow="md" position="top-end" width={320}>
       <Popover.Target>{children}</Popover.Target>
       <Popover.Dropdown>
         <Stack>
           <Text weight={500}>Share</Text>
-          <Group spacing="xs">
+          <SimpleGrid cols={3}>
             {shareLinks.map(({ type, onClick, render }) => (
               <Button
                 key={type}
@@ -109,7 +128,7 @@ export function ShareButton({
                 </Stack>
               </Button>
             ))}
-          </Group>
+          </SimpleGrid>
         </Stack>
       </Popover.Dropdown>
     </Popover>

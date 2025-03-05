@@ -3,7 +3,6 @@ import { ComponentProps, ComponentType } from 'react';
 import { UrlObject } from 'url';
 
 const ImageDetailModal = dynamic(() => import('~/components/Image/Detail/ImageDetailModal'));
-const PostDetailModal = dynamic(() => import('~/components/Post/Detail/PostDetailModal'));
 const CollectionEditModal = dynamic(() => import('~/components/Collections/CollectionEditModal'));
 const HiddenCommentsModal = dynamic(() => import('~/components/CommentsV2/HiddenCommentsModal'));
 const ResourceReviewModal = dynamic(
@@ -16,11 +15,13 @@ const CommentEditModal = dynamic(
 const CommentThreadModal = dynamic(
   () => import('~/components/Model/Discussion/CommentThreadModal')
 );
+const SupportModal = dynamic(() => import('~/components/Support/SupportModal'), { ssr: false });
 
 type Url = UrlObject | string;
 type DialogItem<T> = {
   requireAuth?: boolean;
   component: ComponentType<T>;
+  target?: string;
   resolve: (
     query: Record<string, unknown>,
     args: ComponentProps<ComponentType<T>>
@@ -34,20 +35,16 @@ function createDialogDictionary<T extends Record<string, unknown>>(
   return dictionary;
 }
 
+export type DialogKey = keyof typeof dialogs;
+export type DialogState<T extends DialogKey> = ComponentProps<(typeof dialogs)[T]['component']>;
 export const dialogs = createDialogDictionary({
   imageDetail: {
     component: ImageDetailModal,
+    target: '#main',
     resolve: (query, { imageId, ...state }) => ({
       query: { ...query, imageId },
       asPath: `/images/${imageId}`,
       state,
-    }),
-  },
-  postDetail: {
-    component: PostDetailModal,
-    resolve: (query, { postId }) => ({
-      query: { ...query, postId },
-      asPath: `/posts/${postId}`,
     }),
   },
   collectionEdit: {
@@ -64,6 +61,7 @@ export const dialogs = createDialogDictionary({
   },
   resourceReview: {
     component: ResourceReviewModal,
+    target: '#main',
     resolve: (query, { reviewId }) => ({
       query: { ...query, reviewId },
     }),
@@ -84,6 +82,13 @@ export const dialogs = createDialogDictionary({
     component: CommentThreadModal,
     resolve: (query, { commentId, highlight }) => ({
       query: { ...query, commentId, highlight },
+    }),
+  },
+  support: {
+    component: SupportModal,
+    resolve: (query) => ({
+      query,
+      asPath: '/support',
     }),
   },
 });

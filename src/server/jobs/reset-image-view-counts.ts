@@ -11,22 +11,18 @@ export const resetImageViewCounts = createJob(
   async () => {
     if (!clickhouse) return;
 
-    const imageViews = await clickhouse.query({
-      query: `
-        SELECT
-          entityId as imageId,
-          sumIf(views, createdDate = current_date()) day,
-          sumIf(views, createdDate >= subtractDays(current_date(), 7)) week,
-          sumIf(views, createdDate >= subtractDays(current_date(), 30)) month,
-          sumIf(views, createdDate >= subtractYears(current_date(), 1)) year,
-          sum(views) all_time
-        FROM daily_views
-        WHERE entityType = 'Image'
-        GROUP BY imageId;
-      `,
-      format: 'JSONEachRow',
-    });
-    const viewedImages = (await imageViews?.json()) as ImageViewCount[];
+    const viewedImages = await clickhouse.$query<ImageViewCount>`
+      SELECT
+        entityId as imageId,
+        sumIf(views, createdDate = current_date()) day,
+        sumIf(views, createdDate >= subtractDays(current_date(), 7)) week,
+        sumIf(views, createdDate >= subtractDays(current_date(), 30)) month,
+        sumIf(views, createdDate >= subtractYears(current_date(), 1)) year,
+        sum(views) all_time
+      FROM daily_views
+      WHERE entityType = 'Image'
+      GROUP BY imageId
+    `;
     console.log(viewedImages.length);
 
     const batches = chunk(viewedImages, 1000);
@@ -70,7 +66,7 @@ async function processBatch(batch: ImageViewCount[], i: number) {
               AS int) as views
           FROM json_array_elements(${batchJson}::json) mvs
           CROSS JOIN (
-              SELECT unnest(enum_range(NULL::"MetricTimeframe")) AS timeframe
+              SELECT unnest(enum_range('AllTime'::"MetricTimeframe", NULL)) AS "timeframe"
           ) tf
       ) im
       WHERE im.views IS NOT NULL

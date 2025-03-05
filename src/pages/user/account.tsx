@@ -1,6 +1,5 @@
-import { Container, Stack, Title, Text, Button } from '@mantine/core';
-import { getProviders } from 'next-auth/react';
-import React, { useMemo } from 'react';
+import { Container, Stack, Title, Text } from '@mantine/core';
+import React from 'react';
 
 import { AccountsCard } from '~/components/Account/AccountsCard';
 import { ApiKeysCard } from '~/components/Account/ApiKeysCard';
@@ -15,10 +14,14 @@ import { useFeatureFlags } from '~/providers/FeatureFlagsProvider';
 import { createServerSideProps } from '~/server/utils/server-side-helpers';
 import { ModerationCard } from '~/components/Account/ModerationCard';
 import { useCurrentUser } from '~/hooks/useCurrentUser';
-import { UserReferralCodesCard } from '~/components/Account/UserReferralCodesCard';
+import { PaymentMethodsCard } from '~/components/Account/PaymentMethodsCard';
+import { UserPaymentConfigurationCard } from '~/components/Account/UserPaymentConfigurationCard';
+import { ContentControlsCard } from '~/components/Account/ContentControlsCard';
+import { RefreshSessionCard } from '~/components/Account/RefreshSessionCard';
+import { GenerationSettingsCard } from '~/components/Account/GenerationSettingsCard';
 
-export default function Account({ providers }: Props) {
-  const { apiKeys, buzz } = useFeatureFlags();
+export default function Account() {
+  const { apiKeys, canViewNsfw } = useFeatureFlags();
   const currentUser = useCurrentUser();
 
   return (
@@ -35,24 +38,25 @@ export default function Account({ providers }: Props) {
             </Text>
           </Stack>
           <ProfileCard />
-          {buzz && <UserReferralCodesCard />}
           <SocialProfileCard />
           <SettingsCard />
-          <ModerationCard />
+          <ContentControlsCard />
+          <GenerationSettingsCard />
+          {canViewNsfw && <ModerationCard />}
+          <AccountsCard />
+          <UserPaymentConfigurationCard />
           {currentUser?.subscriptionId && <SubscriptionCard />}
+          <PaymentMethodsCard />
+          {/* {buzz && <UserReferralCodesCard />} */}
           <NotificationsCard />
-          <AccountsCard providers={providers} />
           {apiKeys && <ApiKeysCard />}
+          <RefreshSessionCard />
           <DeleteCard />
         </Stack>
       </Container>
     </>
   );
 }
-
-type Props = {
-  providers: AsyncReturnType<typeof getProviders>;
-};
 
 export const getServerSideProps = createServerSideProps({
   useSSG: true,
@@ -66,14 +70,7 @@ export const getServerSideProps = createServerSideProps({
         },
       };
 
-    const providers = await getProviders();
     await ssg?.account.getAll.prefetch();
-    if (session?.user?.subscriptionId) await ssg?.stripe.getUserSubscription.prefetch();
-
-    return {
-      props: {
-        providers,
-      },
-    };
+    if (session?.user?.subscriptionId) await ssg?.subscriptions.getUserSubscription.prefetch();
   },
 });

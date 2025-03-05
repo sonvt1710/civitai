@@ -1,60 +1,25 @@
 import {
   Button,
-  Chip,
-  ChipProps,
+  ButtonProps,
   Divider,
   Drawer,
-  Group,
   Indicator,
   Popover,
   Stack,
-  createStyles,
+  useMantineTheme,
 } from '@mantine/core';
-import { MetricTimeframe } from '@prisma/client';
-import { IconChevronDown, IconFilter } from '@tabler/icons-react';
-import { useRouter } from 'next/router';
+import { MetricTimeframe } from '~/shared/utils/prisma/enums';
+import { IconFilter } from '@tabler/icons-react';
 import { useCallback, useState } from 'react';
 import { PeriodFilter } from '~/components/Filters';
-import { useCurrentUser, useIsSameUser } from '~/hooks/useCurrentUser';
 import { useIsMobile } from '~/hooks/useIsMobile';
 import { useFiltersContext } from '~/providers/FiltersProvider';
 import { ArticleQueryInput } from '~/server/schema/article.schema';
+import { FilterButton } from '~/components/Buttons/FilterButton';
 
-const useStyles = createStyles((theme) => ({
-  label: {
-    fontSize: 12,
-    fontWeight: 600,
-
-    '&[data-checked]': {
-      '&, &:hover': {
-        color: theme.colorScheme === 'dark' ? theme.white : theme.black,
-        border: `1px solid ${theme.colors[theme.primaryColor][theme.fn.primaryShade()]}`,
-      },
-
-      '&[data-variant="filled"]': {
-        // color: theme.colorScheme === 'dark' ? theme.white : theme.black,
-        backgroundColor: 'transparent',
-      },
-    },
-  },
-  opened: {
-    transform: 'rotate(180deg)',
-    transition: 'transform 200ms ease',
-  },
-
-  actionButton: {
-    [theme.fn.smallerThan('sm')]: {
-      width: '100%',
-    },
-  },
-}));
-
-export function ArticleFiltersDropdown({ query, onChange }: Props) {
-  const { classes, theme, cx } = useStyles();
+export function ArticleFiltersDropdown({ query, onChange, ...buttonProps }: Props) {
+  const theme = useMantineTheme();
   const mobile = useIsMobile();
-  const currentUser = useCurrentUser();
-  const router = useRouter();
-  const isSameUser = useIsSameUser(router.query.username);
 
   const [opened, setOpened] = useState(false);
 
@@ -66,8 +31,7 @@ export function ArticleFiltersDropdown({ query, onChange }: Props) {
   const mergedFilters = query || filters;
 
   const filterLength =
-    (mergedFilters.followed ? 1 : 0) +
-    (mergedFilters.period && mergedFilters.period !== MetricTimeframe.AllTime ? 1 : 0);
+    mergedFilters.period && mergedFilters.period !== MetricTimeframe.AllTime ? 1 : 0;
 
   const clearFilters = useCallback(() => {
     const reset = {
@@ -79,14 +43,6 @@ export function ArticleFiltersDropdown({ query, onChange }: Props) {
     else setFilters(reset);
   }, [onChange, setFilters]);
 
-  const chipProps: Partial<ChipProps> = {
-    size: 'sm',
-    radius: 'xl',
-    variant: 'filled',
-    classNames: classes,
-    tt: 'capitalize',
-  };
-
   const target = (
     <Indicator
       offset={4}
@@ -97,19 +53,9 @@ export function ArticleFiltersDropdown({ query, onChange }: Props) {
       dot={false}
       inline
     >
-      <Button
-        className={classes.actionButton}
-        color="gray"
-        radius="xl"
-        variant={theme.colorScheme === 'dark' ? 'filled' : 'light'}
-        rightIcon={<IconChevronDown className={cx({ [classes.opened]: opened })} size={16} />}
-        onClick={() => setOpened((o) => !o)}
-      >
-        <Group spacing={4} noWrap>
-          <IconFilter size={16} />
-          Filters
-        </Group>
-      </Button>
+      <FilterButton icon={IconFilter} onClick={() => setOpened((o) => !o)} active={opened}>
+        Filters
+      </FilterButton>
     </Indicator>
   );
 
@@ -125,23 +71,7 @@ export function ArticleFiltersDropdown({ query, onChange }: Props) {
             onChange={(period) => onChange({ period })}
           />
         ) : (
-          <PeriodFilter type="images" variant="chips" />
-        )}
-        {currentUser && !isSameUser && (
-          <>
-            <Divider label="Modifiers" labelProps={{ weight: 'bold', size: 'sm' }} />
-            <Group>
-              <Chip
-                {...chipProps}
-                checked={mergedFilters.followed}
-                onChange={(checked) =>
-                  onChange ? onChange({ followed: checked }) : setFilters({ followed: checked })
-                }
-              >
-                Followed Only
-              </Chip>
-            </Group>
-          </>
+          <PeriodFilter type="articles" variant="chips" />
         )}
       </Stack>
       {filterLength > 0 && (
@@ -164,16 +94,17 @@ export function ArticleFiltersDropdown({ query, onChange }: Props) {
         <Drawer
           opened={opened}
           onClose={() => setOpened(false)}
-          withCloseButton={false}
           size="90%"
           position="bottom"
           styles={{
-            body: { padding: 16 },
             drawer: {
               height: 'auto',
-              maxHeight: 'calc(100dvh - var(--mantine-header-height))',
+              maxHeight: 'calc(100dvh - var(--header-height))',
               overflowY: 'auto',
             },
+            body: { padding: 16, paddingTop: 0, overflowY: 'auto' },
+            header: { padding: '4px 8px' },
+            closeButton: { height: 32, width: 32, '& > svg': { width: 24, height: 24 } },
           }}
         >
           {dropdown}
@@ -198,7 +129,7 @@ export function ArticleFiltersDropdown({ query, onChange }: Props) {
   );
 }
 
-type Props = {
+type Props = Omit<ButtonProps, 'onClick' | 'children' | 'rightIcon'> & {
   query?: Partial<ArticleQueryInput>;
   onChange?: (params: Partial<ArticleQueryInput>) => void;
 };

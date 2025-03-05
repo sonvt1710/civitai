@@ -1,55 +1,58 @@
-import { ImageSort } from '~/server/common/enums';
 import { Carousel } from '@mantine/carousel';
 import {
   ActionIcon,
   AspectRatio,
   Box,
-  Center,
-  createStyles,
-  useMantineTheme,
   Button,
+  Center,
   Container,
+  createStyles,
   Text,
+  Loader,
 } from '@mantine/core';
-import { useMediaQuery } from '@mantine/hooks';
+import { NextLink as Link } from '~/components/NextLink/NextLink';
+import { MetricTimeframe } from '~/shared/utils/prisma/enums';
 import { IconInfoCircle } from '@tabler/icons-react';
-
-import { ImageGuard } from '~/components/ImageGuard/ImageGuard';
-import { MediaHash } from '~/components/ImageHash/ImageHash';
-import { ImageMetaPopover } from '~/components/ImageMeta/ImageMeta';
-import { Reactions } from '~/components/Reaction/Reactions';
-import { NextLink } from '@mantine/next';
-import { EdgeMedia } from '~/components/EdgeMedia/EdgeMedia';
-import { useQueryImages } from '~/components/Image/image.utils';
-import { MetricTimeframe } from '@prisma/client';
+import { useContainerSmallerThan } from '~/components/ContainerProvider/useContainerSmallerThan';
 import { RoutedDialogLink } from '~/components/Dialog/RoutedDialogProvider';
+import { EdgeMedia } from '~/components/EdgeMedia/EdgeMedia';
+import { ImageContextMenu } from '~/components/Image/ContextMenu/ImageContextMenu';
+import { useQueryImages } from '~/components/Image/image.utils';
+import { ImageMetaPopover2 } from '~/components/Image/Meta/ImageMetaPopover';
+import { ImageGuard2 } from '~/components/ImageGuard/ImageGuard2';
+
+import { MediaHash } from '~/components/ImageHash/ImageHash';
+import { Reactions } from '~/components/Reaction/Reactions';
+import { ImageSort } from '~/server/common/enums';
+import { GetInfiniteImagesInput } from '~/server/schema/image.schema';
+import { containerQuery } from '~/utils/mantine-css-helpers';
 
 export function ResourceReviewCarousel({
-  username,
+  userId,
   modelVersionId,
   reviewId,
 }: {
-  username: string;
+  userId: number;
   modelVersionId: number;
   reviewId: number;
 }) {
-  const { classes, theme } = useStyles();
-  const mobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm}px)`);
+  const { classes } = useStyles();
+  const mobile = useContainerSmallerThan('sm');
 
-  const filters = {
-    username,
+  // today, typescript was not cool.
+  // functions will only check extra parameters if it's fresh
+  const filters: GetInfiniteImagesInput = {
+    userId,
     modelVersionId,
     sort: ImageSort.MostReactions,
     period: MetricTimeframe.AllTime,
     limit: 10,
   };
 
-  const { data, images } = useQueryImages(filters);
+  // TODO get images by reviewid
+  const { data, images, isLoading } = useQueryImages(filters);
 
-  // const images = data?.pages.flatMap((x) => x.items) ?? [];
   const viewMore = data?.pages.some((x) => x.nextCursor !== undefined) ?? false;
-
-  if (!images?.length) return null;
 
   return (
     <Box
@@ -59,37 +62,33 @@ export function ResourceReviewCarousel({
       })}
     >
       <Container py="md">
-        <Carousel
-          key={reviewId}
-          classNames={classes}
-          slideSize="50%"
-          breakpoints={[{ maxWidth: 'sm', slideSize: '100%', slideGap: 5 }]}
-          slideGap="xl"
-          align={images.length > 2 ? 'end' : 'center'}
-          withControls={images.length > 2 ? true : false}
-          slidesToScroll={mobile ? 1 : 2}
-          loop
-        >
-          <ImageGuard
-            images={images}
-            connect={{ entityId: reviewId, entityType: 'review' }}
-            render={(image) => (
-              <Carousel.Slide>
-                <ImageGuard.Content>
-                  {({ safe }) => (
+        {isLoading ? (
+          <div className="flex h-96 items-center justify-center">
+            <Loader />
+          </div>
+        ) : (
+          <Carousel
+            key={reviewId}
+            classNames={classes}
+            slideSize="50%"
+            breakpoints={[{ maxWidth: 'sm', slideSize: '100%', slideGap: 5 }]}
+            slideGap="xl"
+            align={images.length > 2 ? 'end' : 'center'}
+            withControls={images.length > 2 ? true : false}
+            slidesToScroll={mobile ? 1 : 2}
+            loop
+          >
+            {images.map((image, i) => (
+              <Carousel.Slide key={image.id}>
+                <ImageGuard2 image={image} connectType="review" connectId={reviewId}>
+                  {(safe) => (
                     <Center style={{ height: '100%', width: '100%' }}>
                       <div style={{ width: '100%', position: 'relative' }}>
-                        <ImageGuard.ToggleConnect position="top-left" />
-                        <ImageGuard.Report />
+                        <ImageGuard2.BlurToggle className="absolute left-2 top-2 z-10" />
+                        <ImageContextMenu image={image} className="absolute right-2 top-2 z-10" />
+
                         <RoutedDialogLink name="imageDetail" state={{ imageId: image.id, images }}>
-                          <AspectRatio
-                            ratio={1}
-                            sx={(theme) => ({
-                              width: '100%',
-                              borderRadius: theme.radius.md,
-                              overflow: 'hidden',
-                            })}
-                          >
+                          <div className="relative aspect-square">
                             {!safe ? (
                               <MediaHash {...image} />
                             ) : (
@@ -103,9 +102,8 @@ export function ResourceReviewCarousel({
                                 style={{ width: '100%', objectPosition: 'top' }}
                               />
                             )}
-                          </AspectRatio>
+                          </div>
                         </RoutedDialogLink>
-
                         <Reactions
                           entityId={image.id}
                           entityType="image"
@@ -121,54 +119,54 @@ export function ResourceReviewCarousel({
                           className={classes.reactions}
                           targetUserId={image.user.id}
                         />
-                        {!image.hideMeta && image.meta && (
-                          <ImageMetaPopover
-                            meta={image.meta}
-                            generationProcess={image.generationProcess ?? undefined}
-                            imageId={image.id}
-                          >
-                            <ActionIcon className={classes.info} variant="transparent" size="lg">
-                              <IconInfoCircle
-                                color="white"
-                                filter="drop-shadow(1px 1px 2px rgb(0 0 0 / 50%)) drop-shadow(0px 5px 15px rgb(0 0 0 / 60%))"
-                                opacity={0.8}
-                                strokeWidth={2.5}
-                                size={26}
-                              />
-                            </ActionIcon>
-                          </ImageMetaPopover>
+                        {image.hasMeta && (
+                          <div className="absolute bottom-0.5 right-0.5 z-10">
+                            <ImageMetaPopover2 imageId={image.id} type={image.type}>
+                              <ActionIcon variant="transparent" size="lg">
+                                <IconInfoCircle
+                                  color="white"
+                                  filter="drop-shadow(1px 1px 2px rgb(0 0 0 / 50%)) drop-shadow(0px 5px 15px rgb(0 0 0 / 60%))"
+                                  opacity={0.8}
+                                  strokeWidth={2.5}
+                                  size={26}
+                                />
+                              </ActionIcon>
+                            </ImageMetaPopover2>
+                          </div>
                         )}
                       </div>
                     </Center>
                   )}
-                </ImageGuard.Content>
+                </ImageGuard2>
+              </Carousel.Slide>
+            ))}
+            {viewMore && (
+              <Carousel.Slide style={{ display: 'flex', alignItems: 'center' }}>
+                <AspectRatio
+                  ratio={1}
+                  sx={(theme) => ({
+                    width: '100%',
+                    borderRadius: theme.radius.md,
+                    overflow: 'hidden',
+                  })}
+                >
+                  <Button
+                    component={Link}
+                    href={`/images?view=feed&periodMode=stats&modelVersionId=${modelVersionId}&userId=${userId}`}
+                    rel="nofollow"
+                    variant="outline"
+                    fullWidth
+                    className={classes.viewMore}
+                    radius="md"
+                  >
+                    View more
+                  </Button>
+                </AspectRatio>
               </Carousel.Slide>
             )}
-          />
-          {viewMore && (
-            <Carousel.Slide style={{ display: 'flex', alignItems: 'center' }}>
-              <AspectRatio
-                ratio={1}
-                sx={(theme) => ({
-                  width: '100%',
-                  borderRadius: theme.radius.md,
-                  overflow: 'hidden',
-                })}
-              >
-                <Button
-                  component={NextLink}
-                  href={`/images?view=feed&periodMode=stats&modelVersionId=${modelVersionId}&username=${username}`}
-                  variant="outline"
-                  fullWidth
-                  className={classes.viewMore}
-                  radius="md"
-                >
-                  View more
-                </Button>
-              </AspectRatio>
-            </Carousel.Slide>
-          )}
-        </Carousel>
+          </Carousel>
+        )}
+
         <Text size="xs" color="dimmed" mt="xs" mb="-xs">
           Images this user generated with this resource
         </Text>
@@ -183,7 +181,7 @@ const useStyles = createStyles((theme) => ({
       width: 24,
       height: 24,
 
-      [theme.fn.smallerThan('sm')]: {
+      [containerQuery.smallerThan('sm')]: {
         minWidth: 16,
         minHeight: 16,
       },
@@ -210,7 +208,7 @@ const useStyles = createStyles((theme) => ({
       to: 'rgba(37,38,43,0)',
       deg: 0,
     }),
-    backdropFilter: 'blur(13px) saturate(160%)',
+    // backdropFilter: 'blur(13px) saturate(160%)',
     boxShadow: '0 -2px 6px 1px rgba(0,0,0,0.16)',
     zIndex: 10,
     gap: 6,
@@ -221,11 +219,11 @@ const useStyles = createStyles((theme) => ({
     bottom: 6,
     left: 6,
     borderRadius: theme.radius.sm,
-    background: theme.fn.rgba(
-      theme.colorScheme === 'dark' ? theme.colors.dark[9] : theme.colors.gray[0],
-      0.8
-    ),
-    backdropFilter: 'blur(13px) saturate(160%)',
+    background:
+      theme.colorScheme === 'dark'
+        ? theme.fn.rgba(theme.colors.dark[6], 0.6)
+        : theme.colors.gray[0],
+    // backdropFilter: 'blur(13px) saturate(160%)',
     boxShadow: '0 -2px 6px 1px rgba(0,0,0,0.16)',
     padding: 4,
   },
