@@ -90,8 +90,24 @@ export function ChapterSettingsModal({
   const ceilingDays = currentEaConfig
     ? Math.min(currentEaConfig.timeframe, maxDays)
     : maxDays;
-  const allowedTimeframes = EARLY_ACCESS_CONFIG.timeframeValues.filter((d) => d <= ceilingDays);
+  const baseAllowed = EARLY_ACCESS_CONFIG.timeframeValues.filter((d) => d <= ceilingDays);
+  // Defensive: a grandfathered chapter may have a non-canonical timeframe
+  // (e.g. `1` from before we constrained to the discrete set). Surface it
+  // in the Select so the user isn't locked out of editing — picking any
+  // canonical option below it is still a valid reduce.
+  const allowedTimeframes =
+    currentEaConfig &&
+    !EARLY_ACCESS_CONFIG.timeframeValues.includes(currentEaConfig.timeframe)
+      ? Array.from(new Set([...baseAllowed, currentEaConfig.timeframe])).sort((a, b) => a - b)
+      : baseAllowed;
   const isEaUnavailable = !currentEaConfig && allowedTimeframes.length === 0;
+
+  // Grandfathered chapters with a price below the current floor can only
+  // reduce — clamp the floor to the existing price so the NumberInput
+  // doesn't snap UP and trigger the server's "can't increase" check.
+  const buzzPriceFloor = currentEaConfig
+    ? Math.min(MIN_BUZZ_PRICE, currentEaConfig.buzzPrice)
+    : MIN_BUZZ_PRICE;
   const buzzPriceCeiling = currentEaConfig
     ? Math.min(currentEaConfig.buzzPrice, 10000)
     : 10000;
@@ -148,7 +164,7 @@ export function ChapterSettingsModal({
                   }
                   value={chapterSettingsEaBuzzPrice}
                   onChange={(val) => setChapterSettingsEaBuzzPrice(val)}
-                  min={MIN_BUZZ_PRICE}
+                  min={buzzPriceFloor}
                   max={buzzPriceCeiling}
                   step={10}
                   clampBehavior="strict"

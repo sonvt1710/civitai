@@ -3725,6 +3725,20 @@ export const comicsRouter = router({
           ? new Date(eaActivatesAt.getTime() + input.earlyAccessConfig.timeframe * 24 * 60 * 60 * 1000)
           : null;
 
+      // Compute the next `availability`. When EA is being added we move
+      // to `EarlyAccess`. When EA is being removed we revert to `Public`
+      // ONLY if the chapter was previously `EarlyAccess` — otherwise
+      // (e.g. a chapter that was made `Private` by a moderator) we leave
+      // the existing availability alone.
+      let nextAvailability: Availability | undefined;
+      if (input.earlyAccessConfig !== undefined) {
+        if (input.earlyAccessConfig) {
+          nextAvailability = Availability.EarlyAccess;
+        } else if (chapter.availability === Availability.EarlyAccess) {
+          nextAvailability = Availability.Public;
+        }
+      }
+
       const updated = await dbWrite.comicChapter.update({
         where: {
           projectId_position: { projectId: input.projectId, position: input.chapterPosition },
@@ -3736,9 +3750,7 @@ export const comicsRouter = router({
             ? {
                 earlyAccessConfig: input.earlyAccessConfig ?? undefined,
                 earlyAccessEndsAt,
-                availability: input.earlyAccessConfig
-                  ? Availability.EarlyAccess
-                  : Availability.Public,
+                ...(nextAvailability !== undefined ? { availability: nextAvailability } : {}),
               }
             : {}),
         },
@@ -3821,6 +3833,13 @@ export const comicsRouter = router({
           status: ComicChapterStatus.Draft,
           // Clear publishedAt when canceling a schedule (it was set to the future date)
           ...(isScheduled ? { publishedAt: null } : {}),
+          // Reset EA fields so a stale `availability=EarlyAccess` /
+          // `earlyAccessEndsAt` from the prior publish doesn't linger and
+          // make the chapter look paywalled while it's back in Draft.
+          // `purchaseChapterAccess` already blocks an unpublish with
+          // outstanding purchases, so we never strand a paid user.
+          earlyAccessEndsAt: null,
+          availability: Availability.Public,
         },
       });
 
@@ -3953,6 +3972,7 @@ export const comicsRouter = router({
           publishedAt: true,
           earlyAccessConfig: true,
           earlyAccessEndsAt: true,
+          availability: true,
           project: { select: { userId: true } },
         },
       });
@@ -3993,10 +4013,21 @@ export const comicsRouter = router({
       // Recompute the EA window. The window is anchored at the chapter's
       // publish date, NOT the time of this edit — shrinking the timeframe
       // shrinks the deadline backward, but doesn't restart the clock.
+      // For Published chapters `publishedAt` is always set; the fallback
+      // is paranoia for direct-DB-edit edge cases.
       const anchor = chapter.publishedAt ?? new Date();
       const earlyAccessEndsAt = input.earlyAccessConfig
         ? new Date(anchor.getTime() + input.earlyAccessConfig.timeframe * 24 * 60 * 60 * 1000)
         : null;
+
+      // Only change `availability` on a real EA transition — don't clobber
+      // a Private/etc state that a moderator may have set.
+      let nextAvailability: Availability | undefined;
+      if (input.earlyAccessConfig) {
+        nextAvailability = Availability.EarlyAccess;
+      } else if (chapter.availability === Availability.EarlyAccess) {
+        nextAvailability = Availability.Public;
+      }
 
       return dbWrite.comicChapter.update({
         where: {
@@ -4005,9 +4036,7 @@ export const comicsRouter = router({
         data: {
           earlyAccessConfig: input.earlyAccessConfig ?? undefined,
           earlyAccessEndsAt,
-          availability: input.earlyAccessConfig
-            ? Availability.EarlyAccess
-            : Availability.Public,
+          ...(nextAvailability !== undefined ? { availability: nextAvailability } : {}),
         },
       });
     }),
