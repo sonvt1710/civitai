@@ -39,10 +39,7 @@ import { createImageGenStep } from '~/server/services/orchestrator/imageGen/imag
 import { enhanceComicPrompt } from '~/server/services/comics/prompt-enhance';
 import { orchestratorChatCompletionCost } from '~/server/services/comics/orchestrator-chat';
 import { resolveReferenceMentions } from '~/server/services/comics/mention-resolver';
-import {
-  updateComicChapterNsfwLevels,
-  updateComicProjectNsfwLevels,
-} from '~/server/services/nsfwLevels.service';
+import { updateComicNsfwLevels } from '~/server/services/nsfwLevels.service';
 import { createImage, ingestImageById } from '~/server/services/image.service';
 import { createNotification } from '~/server/services/notification.service';
 import { planChapterPanels } from '~/server/services/comics/story-plan';
@@ -2076,7 +2073,7 @@ export const comicsRouter = router({
       });
 
       // Recalculate project NSFW level after chapter removal
-      updateComicProjectNsfwLevels([input.projectId]).catch((e) =>
+      await updateComicNsfwLevels([input.projectId]).catch((e) =>
         console.error(`Failed to update project NSFW after chapter delete:`, e)
       );
 
@@ -2754,8 +2751,7 @@ export const comicsRouter = router({
       ingestImageById({ id: image.id }).catch((e) =>
         console.error(`Failed to ingest sketch edit image ${image.id}:`, e)
       );
-      updateComicChapterNsfwLevels([panel.chapter.project.id]).catch(() => {});
-      updateComicProjectNsfwLevels([panel.chapter.project.id]).catch(() => {});
+      updateComicNsfwLevels([panel.chapter.project.id]).catch(() => {});
 
       return updated;
     }),
@@ -2776,10 +2772,9 @@ export const comicsRouter = router({
     });
 
     // Recalculate NSFW levels after panel removal
-    // Project NSFW is derived from chapter NSFW, so chapter must update first
-    updateComicChapterNsfwLevels([panel.projectId])
-      .then(() => updateComicProjectNsfwLevels([panel.projectId]))
-      .catch((e) => console.error(`Failed to update NSFW levels after panel delete:`, e));
+    await updateComicNsfwLevels([panel.projectId]).catch((e) =>
+      console.error(`Failed to update NSFW levels after panel delete:`, e)
+    );
 
     return { success: true };
   }),
@@ -3717,8 +3712,7 @@ export const comicsRouter = router({
           );
         }
       }
-      await updateComicChapterNsfwLevels([input.projectId]);
-      await updateComicProjectNsfwLevels([input.projectId]);
+      await updateComicNsfwLevels([input.projectId]);
 
       const isScheduled = input.scheduledAt && input.scheduledAt > new Date();
       const isFirstPublish = chapter.status === ComicChapterStatus.Draft;
@@ -4119,8 +4113,7 @@ export const comicsRouter = router({
 
       // Recompute chapter levels from the (now-stamped) images, then bubble
       // up to the project level.
-      await updateComicChapterNsfwLevels([input.id]);
-      await updateComicProjectNsfwLevels([input.id]);
+      await updateComicNsfwLevels([input.id]);
 
       await trackModActivity(ctx.user.id, {
         entityType: 'comicProject',
@@ -4160,8 +4153,7 @@ export const comicsRouter = router({
 
       // Recompute the chapter level from its (now-stamped) images, then
       // bubble up to the project level.
-      await updateComicChapterNsfwLevels([input.projectId]);
-      await updateComicProjectNsfwLevels([input.projectId]);
+      await updateComicNsfwLevels([input.projectId]);
 
       await trackModActivity(ctx.user.id, {
         entityType: 'comicProject',
@@ -4699,11 +4691,8 @@ export const comicsRouter = router({
             },
           });
 
-          updateComicChapterNsfwLevels([input.projectId]).catch((e) =>
-            console.error(`Failed to update chapter NSFW for project ${input.projectId}:`, e)
-          );
-          updateComicProjectNsfwLevels([input.projectId]).catch((e) =>
-            console.error(`Failed to update project NSFW for project ${input.projectId}:`, e)
+          await updateComicNsfwLevels([input.projectId]).catch((e) =>
+            console.error(`Failed to update NSFW levels for project ${input.projectId}:`, e)
           );
 
           createdPanels.push(panel);
@@ -5005,11 +4994,8 @@ export const comicsRouter = router({
       });
 
       // Update NSFW levels — image is already scanned so update directly
-      updateComicChapterNsfwLevels([input.projectId]).catch((e) =>
-        console.error(`Failed to update chapter NSFW for project ${input.projectId}:`, e)
-      );
-      updateComicProjectNsfwLevels([input.projectId]).catch((e) =>
-        console.error(`Failed to update project NSFW for project ${input.projectId}:`, e)
+      await updateComicNsfwLevels([input.projectId]).catch((e) =>
+        console.error(`Failed to update NSFW levels for project ${input.projectId}:`, e)
       );
 
       return panel;
