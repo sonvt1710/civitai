@@ -17,6 +17,10 @@ import {
   throwNotFoundError,
 } from '~/server/utils/errorHandling';
 import {
+  getMaxEarlyAccessDays,
+  getMaxEarlyAccessModels,
+} from '~/server/utils/early-access-helpers';
+import {
   Availability,
   ComicReferenceStatus,
   ComicChapterStatus,
@@ -67,6 +71,7 @@ import {
   seedreamSizes,
   qwenSizes,
   grokSizes,
+  EARLY_ACCESS_CONFIG,
 } from '~/server/common/constants';
 import { hasEntityAccess } from '~/server/services/common.service';
 import {
@@ -635,12 +640,83 @@ const updateReferenceSchema = z.object({
     .refine((v) => !v.includes('@'), 'Name cannot contain @ character'),
 });
 
+// Mirror the model-version EA constraints: timeframe is one of the
+// allowed discrete values (3 / 5 / 7 / 9 / 12 / 15 / 30 days), and the
+// minimum buzz price matches the model `downloadPrice` floor (100). The
+// upper-bound `timeframe` cap and concurrent-EA-chapter cap are enforced
+// at the mutation level since they depend on the user's score.
 const chapterEarlyAccessConfigSchema = z
   .object({
-    buzzPrice: z.number().int().min(1).max(10000),
-    timeframe: z.number().int().min(1).max(30),
+    buzzPrice: z.number().int().min(100).max(10000),
+    timeframe: z
+      .number()
+      .int()
+      .refine(
+        (v) => EARLY_ACCESS_CONFIG.timeframeValues.includes(v),
+        `Timeframe must be one of: ${EARLY_ACCESS_CONFIG.timeframeValues.join(', ')} days.`
+      ),
   })
   .nullable();
+
+/** Active EA chapters for a user — counterpart to `getUserEarlyAccessModelVersions`. */
+async function getUserEarlyAccessChapters(userId: number) {
+  return dbRead.comicChapter.findMany({
+    where: {
+      earlyAccessEndsAt: { gt: new Date() },
+      project: { userId, status: ComicProjectStatus.Active },
+    },
+    select: { id: true },
+  });
+}
+
+/**
+ * Apply the same gating model versions use:
+ *   - `timeframe` cannot exceed the user's score-based cap
+ *   - cannot have more than the score-based cap of EA chapters active at once
+ *
+ * Pass `excludeChapterId` when re-publishing / updating a chapter that's
+ * already in EA, so the chapter doesn't count against its own quota.
+ */
+async function assertCanGrantEarlyAccess({
+  ctx,
+  timeframe,
+  excludeChapterId,
+}: {
+  ctx: { user: SessionUser; features: any };
+  timeframe: number;
+  excludeChapterId?: number;
+}) {
+  if (ctx.user.isModerator) return;
+  const maxDays = getMaxEarlyAccessDays({
+    userMeta: ctx.user.meta as any,
+    features: ctx.features,
+  });
+  if (maxDays === 0) {
+    throw throwBadRequestError(
+      'Your creator score is not high enough to put a chapter in early access yet.'
+    );
+  }
+  if (timeframe > maxDays) {
+    throw throwBadRequestError(
+      `Early access timeframe exceeds your current limit of ${maxDays} day${maxDays === 1 ? '' : 's'}.`
+    );
+  }
+  const active = await getUserEarlyAccessChapters(ctx.user.id);
+  const maxActive = getMaxEarlyAccessModels({
+    userMeta: ctx.user.meta as any,
+    features: ctx.features,
+  });
+  const otherActive = excludeChapterId
+    ? active.filter((c) => c.id !== excludeChapterId)
+    : active;
+  if (otherActive.length >= maxActive) {
+    throw throwBadRequestError(
+      `You already have ${otherActive.length} chapter${
+        otherActive.length === 1 ? '' : 's'
+      } in early access — that's the cap for your current creator score.`
+    );
+  }
+}
 
 // Shared helper: resolve a reference's images for generation
 async function getReferenceImages(referenceId: number) {
@@ -3603,6 +3679,17 @@ export const comicsRouter = router({
         throw throwAuthorizationError();
       }
 
+      // Gate early access by the same rules model versions use: score-based
+      // max days + concurrent-EA cap. Without this, anyone could lock any
+      // chapter behind a paywall regardless of creator standing.
+      if (input.earlyAccessConfig) {
+        await assertCanGrantEarlyAccess({
+          ctx: ctx as any,
+          timeframe: input.earlyAccessConfig.timeframe,
+          excludeChapterId: chapter.id,
+        });
+      }
+
       // Re-trigger ingestion for any panel images still pending scan, and recalculate nsfwLevels
       const panelsWithImages = await dbRead.comicPanel.findMany({
         where: {
@@ -3628,6 +3715,16 @@ export const comicsRouter = router({
       const isScheduled = input.scheduledAt && input.scheduledAt > new Date();
       const isFirstPublish = chapter.status === ComicChapterStatus.Draft;
 
+      // Compute the EA window. Without an explicit `earlyAccessEndsAt` the
+      // purchase mutation short-circuits ("not in early access") even when
+      // a config is set, so we have to write both this AND `availability`
+      // — otherwise the paywall is invisible from the buyer's side.
+      const eaActivatesAt = isScheduled ? input.scheduledAt! : new Date();
+      const earlyAccessEndsAt =
+        input.earlyAccessConfig
+          ? new Date(eaActivatesAt.getTime() + input.earlyAccessConfig.timeframe * 24 * 60 * 60 * 1000)
+          : null;
+
       const updated = await dbWrite.comicChapter.update({
         where: {
           projectId_position: { projectId: input.projectId, position: input.chapterPosition },
@@ -3636,7 +3733,13 @@ export const comicsRouter = router({
           status: isScheduled ? ComicChapterStatus.Scheduled : ComicChapterStatus.Published,
           publishedAt: isScheduled ? input.scheduledAt : new Date(),
           ...(input.earlyAccessConfig !== undefined
-            ? { earlyAccessConfig: input.earlyAccessConfig ?? undefined }
+            ? {
+                earlyAccessConfig: input.earlyAccessConfig ?? undefined,
+                earlyAccessEndsAt,
+                availability: input.earlyAccessConfig
+                  ? Availability.EarlyAccess
+                  : Availability.Public,
+              }
             : {}),
         },
       });
@@ -3845,8 +3948,11 @@ export const comicsRouter = router({
           projectId_position: { projectId: input.projectId, position: input.chapterPosition },
         },
         select: {
+          id: true,
           status: true,
+          publishedAt: true,
           earlyAccessConfig: true,
+          earlyAccessEndsAt: true,
           project: { select: { userId: true } },
         },
       });
@@ -3873,12 +3979,35 @@ export const comicsRouter = router({
         }
       }
 
+      // Same score-based gating applies when (re-)setting EA. Skip the
+      // active-count check when the config is just shrinking (covered by
+      // the `excludeChapterId` arg).
+      if (input.earlyAccessConfig && !currentConfig) {
+        await assertCanGrantEarlyAccess({
+          ctx: ctx as any,
+          timeframe: input.earlyAccessConfig.timeframe,
+          excludeChapterId: chapter.id,
+        });
+      }
+
+      // Recompute the EA window. The window is anchored at the chapter's
+      // publish date, NOT the time of this edit — shrinking the timeframe
+      // shrinks the deadline backward, but doesn't restart the clock.
+      const anchor = chapter.publishedAt ?? new Date();
+      const earlyAccessEndsAt = input.earlyAccessConfig
+        ? new Date(anchor.getTime() + input.earlyAccessConfig.timeframe * 24 * 60 * 60 * 1000)
+        : null;
+
       return dbWrite.comicChapter.update({
         where: {
           projectId_position: { projectId: input.projectId, position: input.chapterPosition },
         },
         data: {
           earlyAccessConfig: input.earlyAccessConfig ?? undefined,
+          earlyAccessEndsAt,
+          availability: input.earlyAccessConfig
+            ? Availability.EarlyAccess
+            : Availability.Public,
         },
       });
     }),
