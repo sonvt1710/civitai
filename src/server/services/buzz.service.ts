@@ -1093,7 +1093,6 @@ export const getDailyCompensationRewardByUser = async ({
   accountType,
   source = 'compensation',
 }: GetDailyBuzzCompensationInput) => {
-  // TODO: We need to update this to use the new clickhouse table.
   const modelVersions = await dbRead.modelVersion.findMany({
     where: { model: { userId }, status: 'Published' },
     select: {
