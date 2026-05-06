@@ -60,6 +60,7 @@ import { signalClient } from '~/utils/signal-client';
 import { comicsSearchIndex } from '~/server/search-index';
 import {
   publicBrowsingLevelsFlag,
+  sfwBrowsingLevelsFlag,
   hasPublicBrowsingLevel,
   hasSafeBrowsingLevel,
   nsfwBrowsingLevelsFlag,
@@ -1190,14 +1191,21 @@ export const comicsRouter = router({
       if (genre) where.genre = genre;
       if (userId) where.userId = userId;
 
-      // NSFW browsing level filter — compute allowed nsfwLevel values using bitwise match
-      // On green domain, enforce PG-only even if browsingLevel not passed
-      const effectiveBrowsingLevel =
-        browsingLevel != null && browsingLevel > 0
-          ? browsingLevel
-          : ctx.features.isGreen
-            ? publicBrowsingLevelsFlag
-            : null;
+      // NSFW browsing level filter — compute allowed nsfwLevel values using bitwise match.
+      //
+      // Green domain cap mirrors `BrowsingLevelProvider`'s domain-forced
+      // level: anonymous viewers can see PG only, logged-in viewers can
+      // see PG + PG13. Anything the client requests is bitwise-AND'd
+      // against this cap, so a hand-crafted request with a higher level
+      // can't bypass the domain rule.
+      const greenCap = ctx.user ? sfwBrowsingLevelsFlag : publicBrowsingLevelsFlag;
+      const requested =
+        browsingLevel != null && browsingLevel > 0 ? browsingLevel : null;
+      const effectiveBrowsingLevel = ctx.features.isGreen
+        ? requested != null
+          ? requested & greenCap
+          : greenCap
+        : requested;
 
       if (effectiveBrowsingLevel != null) {
         // Comic project nsfwLevel is a bit_or aggregate of all chapter levels.
