@@ -856,7 +856,13 @@ function ChapterReader({ project, chapterDbPos }: { project: Project; chapterDbP
   const queryUtils = trpc.useUtils();
   const purchaseAccessMutation = trpc.comics.purchaseChapterAccess.useMutation({
     onSuccess: () => {
-      queryUtils.comics.getPublicProjectForReader.invalidate({ id: project.id });
+      // Refetch the project to pick up any chapter-level changes...
+      void queryUtils.comics.getPublicProjectForReader.invalidate({ id: project.id });
+      // ...AND the EntityAccess record that `useChapterPermission` reads
+      // to compute `canRead`. Without this, the user pays successfully but
+      // the paywall stays up because `getEntityAccess` returns the cached
+      // pre-purchase state until the user navigates away.
+      void queryUtils.common.getEntityAccess.invalidate();
     },
   });
 
