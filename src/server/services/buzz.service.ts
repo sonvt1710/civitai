@@ -1091,6 +1091,7 @@ export const getDailyCompensationRewardByUser = async ({
   userId,
   date = new Date(),
   accountType,
+  source = 'compensation',
 }: GetDailyBuzzCompensationInput) => {
   // TODO: We need to update this to use the new clickhouse table.
   const modelVersions = await dbRead.modelVersion.findMany({
@@ -1117,6 +1118,7 @@ export const getDailyCompensationRewardByUser = async ({
     WHERE date BETWEEN ${minDate} AND ${maxDate}
       AND modelVersionId IN (${versionIds})
       AND amount > 0
+      AND source ${source === 'license' ? '=' : '!='} 'license'
       -- We do this weird conversion here because the DB sometimes has Yellow and sometimes User. Yellow being the alias for User.
       AND ${
         accountType
