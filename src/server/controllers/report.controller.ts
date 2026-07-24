@@ -278,6 +278,13 @@ export async function getReportsHandler({ input }: { input: GetReportsInput }) {
             },
           },
         },
+        challenge: {
+          select: {
+            challenge: {
+              select: { id: true, title: true, createdBy: { select: simpleUserSelect } },
+            },
+          },
+        },
       },
     });
     return {
@@ -298,6 +305,7 @@ export async function getReportsHandler({ input }: { input: GetReportsInput }) {
           comicProject: item.comicProject?.comicProject,
           model3d: item.model3d?.model3d,
           model3dReview: item.model3dReview?.model3dReview,
+          challenge: item.challenge?.challenge,
         };
       }),
       ...result,
